@@ -43,14 +43,25 @@ expected_tags = [
 
 detected_tags = []
 for i, text in enumerate(ocr_data['text']):
-    conf = int(ocr_data['conf'][i]) if ocr_data['conf'][i].isdigit() else 0
+    # ---- SAFE confidence handling ----
+    try:
+        conf_str = str(ocr_data['conf'][i])
+        conf = int(float(conf_str)) if conf_str not in ["", "nan"] else 0
+    except Exception:
+        conf = 0
+
     if conf < threshold:
         continue
-    txt = text.strip().upper()
+
+    txt = str(text).strip().upper()
     for tag in expected_tags:
         if tag in txt:
-            x, y, w, h = (ocr_data['left'][i], ocr_data['top'][i],
-                          ocr_data['width'][i], ocr_data['height'][i])
+            x, y, w, h = (
+                int(ocr_data['left'][i]),
+                int(ocr_data['top'][i]),
+                int(ocr_data['width'][i]),
+                int(ocr_data['height'][i])
+            )
             detected_tags.append((tag, x, y, w, h))
             break
 
