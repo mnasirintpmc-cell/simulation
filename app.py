@@ -1,103 +1,99 @@
 import streamlit as st
-import pandas as pd
+from PIL import Image, ImageDraw
+import random
 import time
-from PIL import Image
+import pandas as pd
 
 # -----------------------------
-# Load P&ID background
+# Page setup
 # -----------------------------
-st.set_page_config(page_title="P&ID Valve Simulation", layout="wide")
+st.set_page_config(page_title="Dry Gas HMI Simulation", layout="wide")
+st.title("🧠 Dry Gas P&ID Simulation HMI")
 
-st.title("🧪 Dry Gas Simulation – P&ID Interactive Demo")
-
-# Try to load the P&ID image
+# -----------------------------
+# Load the P&ID image
+# -----------------------------
 try:
-    image = Image.open("P&ID.png")
-    st.image(image, caption="Plant P&ID Diagram", use_container_width=True)
+    background = Image.open("P&ID.png")
 except FileNotFoundError:
-    st.error("❌ Could not load 'P&ID.png'. Please make sure it’s in the same folder as app.py.")
+    st.error("❌ Could not find 'P&ID.png' — make sure it's in the same folder as app.py")
     st.stop()
 
-st.markdown("---")
-
 # -----------------------------
-# Define valves and sensors
+# Define instrument positions (based on your drawing)
+# Adjust x,y manually to match valve/sensor positions
 # -----------------------------
-valves = {
-    "V-101": {"status": False, "pressure": 1.2, "flow": 0.0},
-    "V-102": {"status": False, "pressure": 1.0, "flow": 0.0},
-    "V-201": {"status": False, "pressure": 2.3, "flow": 0.0},
-    "V-301": {"status": False, "pressure": 3.5, "flow": 0.0},
-    "V-401": {"status": False, "pressure": 4.2, "flow": 0.0},
+components = {
+    "V-101": {"type": "valve", "x": 300, "y": 400, "status": False},
+    "V-102": {"type": "valve", "x": 600, "y": 420, "status": False},
+    "PT-101": {"type": "pressure", "x": 450, "y": 380, "value": 1.2},
+    "PI-101": {"type": "flow", "x": 700, "y": 380, "value": 0.0},
 }
 
 # -----------------------------
-# Sidebar – Control valves
+# Sidebar controls
 # -----------------------------
-st.sidebar.header("Valve Control Panel")
+st.sidebar.header("Valve Controls")
 
-for tag, data in valves.items():
-    new_state = st.sidebar.toggle(f"{tag} Open/Close", value=data["status"])
-    valves[tag]["status"] = new_state
+for name, comp in components.items():
+    if comp["type"] == "valve":
+        components[name]["status"] = st.sidebar.toggle(f"{name} Open/Close", value=comp["status"])
 
-st.sidebar.markdown("---")
-simulate = st.sidebar.button("▶ Start Simulation")
+simulate = st.sidebar.button("▶ Run Simulation")
 
 # -----------------------------
 # Simulation logic
 # -----------------------------
-if "trend" not in st.session_state:
-    st.session_state.trend = pd.DataFrame(columns=["Valve", "Pressure", "Flow", "Timestamp"])
+if "history" not in st.session_state:
+    st.session_state.history = pd.DataFrame(columns=["Time", "Valve", "Pressure", "Flow"])
 
 if simulate:
-    with st.spinner("Simulating flow & pressure..."):
-        time.sleep(1.5)
+    for name, comp in components.items():
+        if comp["type"] == "pressure":
+            comp["value"] = round(random.uniform(0.8, 3.5), 2)
+        if comp["type"] == "flow":
+            open_valves = sum(1 for c in components.values() if c.get("status"))
+            comp["value"] = round(open_valves * random.uniform(2.0, 5.0), 2)
 
-        # update readings
-        new_data = []
-        for tag, v in valves.items():
-            if v["status"]:
-                v["flow"] = round(5 + 10 * v["pressure"], 2)
-                v["pressure"] = round(v["pressure"] + 0.2, 2)
-            else:
-                v["flow"] = 0
-                v["pressure"] = max(0.5, v["pressure"] - 0.1)
-
+    new_data = []
+    for name, comp in components.items():
+        if comp["type"] in ["pressure", "flow"]:
             new_data.append({
-                "Valve": tag,
-                "Pressure": v["pressure"],
-                "Flow": v["flow"],
-                "Timestamp": pd.Timestamp.now()
+                "Time": pd.Timestamp.now(),
+                "Valve": name,
+                "Pressure": components["PT-101"]["value"],
+                "Flow": components["PI-101"]["value"]
             })
-
-        st.session_state.trend = pd.concat([st.session_state.trend, pd.DataFrame(new_data)], ignore_index=True)
-
-# -----------------------------
-# Display live table
-# -----------------------------
-st.subheader("📋 Live Valve Data")
-df = pd.DataFrame([{**{"Valve": k}, **v} for k, v in valves.items()])
-st.dataframe(df, use_container_width=True)
+    st.session_state.history = pd.concat([st.session_state.history, pd.DataFrame(new_data)], ignore_index=True)
 
 # -----------------------------
-# Trend visualization
+# Draw overlay on P&ID
 # -----------------------------
-st.subheader("📈 Pressure & Flow Trends")
+canvas = background.copy()
+draw = ImageDraw.Draw(canvas)
 
-if len(st.session_state.trend) > 0:
-    selected_valves = st.multiselect("Select valves to display", valves.keys(), default=list(valves.keys()))
-    filtered = st.session_state.trend[st.session_state.trend["Valve"].isin(selected_valves)]
+for name, comp in components.items():
+    x, y = comp["x"], comp["y"]
 
-    st.line_chart(
-        filtered.pivot(index="Timestamp", columns="Valve", values="Pressure"),
-        use_container_width=True,
-    )
-    st.line_chart(
-        filtered.pivot(index="Timestamp", columns="Valve", values="Flow"),
-        use_container_width=True,
-    )
-else:
-    st.info("No simulation data yet. Click ▶ Start Simulation to begin.")
+    if comp["type"] == "valve":
+        color = "green" if comp["status"] else "red"
+        draw.ellipse((x-15, y-15, x+15, y+15), fill=color, outline="black")
+        draw.text((x-20, y+20), name, fill="white")
+    elif comp["type"] == "pressure":
+        draw.text((x, y), f"{name}: {comp['value']} bar", fill="yellow")
+    elif comp["type"] == "flow":
+        draw.text((x, y), f"{name}: {comp['value']} slpm", fill="cyan")
 
+st.image(canvas, caption="Live P&ID Simulation", use_container_width=True)
+
+# -----------------------------
+# Trend charts
+# -----------------------------
 st.markdown("---")
-st.caption("Built with ❤️ using Streamlit")
+st.subheader("📈 Trend Data")
+
+if len(st.session_state.history) > 0:
+    st.line_chart(st.session_state.history[["Pressure"]])
+    st.line_chart(st.session_state.history[["Flow"]])
+else:
+    st.info("No trend data yet. Click ▶ Run Simulation to start.")
