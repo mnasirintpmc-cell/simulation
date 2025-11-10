@@ -3,4 +3,3 @@ pandas
 Pillow
 plotly
 numpy
-# install pytesseract manually inside the app to guarantee it loads
