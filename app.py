@@ -2,54 +2,87 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from PIL import Image, ImageDraw
+import pytesseract
+import plotly.express as px
 
-# -------------------------------
-# APP SETTINGS
-# -------------------------------
+# ------------------------------------
+# PAGE CONFIG
+# ------------------------------------
 st.set_page_config(page_title="P&ID Valve Simulator", layout="wide")
-st.title("🛠️ P&ID Valve Simulation Tool")
+st.title("🛠️ P&ID Valve Simulation Tool (with OCR Detection)")
 
-# -------------------------------
-# LOAD BASE P&ID IMAGE
-# -------------------------------
+# ------------------------------------
+# LOAD BASE IMAGE
+# ------------------------------------
 try:
     base_img = Image.open("P&ID.png").convert("RGB")
-    st.session_state['base_img'] = base_img
 except Exception as e:
     st.error("❌ Could not load 'P&ID.png'. Please make sure it’s in the same folder as app.py.")
     st.stop()
 
-# -------------------------------
-# INITIALIZE SESSION STATE
-# -------------------------------
+# ------------------------------------
+# OCR: DETECT VALVE TAGS
+# ------------------------------------
+st.subheader("🔍 Detecting valve tags from P&ID...")
+
+ocr_data = pytesseract.image_to_data(base_img, output_type=pytesseract.Output.DICT)
+
+valves_detected = []
+for i, text in enumerate(ocr_data['text']):
+    if text.strip() != "" and text.upper().startswith("V"):  # detect V1, V2, V101, etc.
+        x = ocr_data['left'][i]
+        y = ocr_data['top'][i]
+        w = ocr_data['width'][i]
+        h = ocr_data['height'][i]
+        valves_detected.append({
+            "id": text.strip(),
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h
+        })
+
+st.write(f"✅ Detected {len(valves_detected)} valves: {[v['id'] for v in valves_detected]}")
+
+# ------------------------------------
+# INIT SESSION STATE
+# ------------------------------------
 if 'valves' not in st.session_state:
     st.session_state['valves'] = []
 if 'data' not in st.session_state:
     st.session_state['data'] = pd.DataFrame(columns=["Valve ID", "Status", "Flow (SLPM)", "Pressure (bar)", "Temperature (°C)"])
 
-# -------------------------------
-# SIDEBAR – ADD & CONTROL VALVES
-# -------------------------------
+# ------------------------------------
+# LOAD VALVES FROM OCR
+# ------------------------------------
+if len(st.session_state['valves']) == 0 and len(valves_detected) > 0:
+    for v in valves_detected:
+        st.session_state['valves'].append({
+            "id": v['id'],
+            "x": int(v['x'] / base_img.width * 100),
+            "y": int(v['y'] / base_img.height * 100),
+            "status": "Closed"
+        })
+        new_row = {
+            "Valve ID": v['id'],
+            "Status": "Closed",
+            "Flow (SLPM)": 0,
+            "Pressure (bar)": 0,
+            "Temperature (°C)": 25
+        }
+        st.session_state['data'] = pd.concat([st.session_state['data'], pd.DataFrame([new_row])], ignore_index=True)
+
+# ------------------------------------
+# SIDEBAR CONTROLS
+# ------------------------------------
 st.sidebar.header("⚙️ Valve Controls")
 
-valve_id = st.sidebar.text_input("Valve ID", f"V{len(st.session_state['valves'])+1}")
-x_pos = st.sidebar.slider("X Position (%)", 0, 100, 50)
-y_pos = st.sidebar.slider("Y Position (%)", 0, 100, 50)
-
-if st.sidebar.button("Add Valve"):
-    st.session_state['valves'].append({"id": valve_id, "x": x_pos, "y": y_pos, "status": "Closed"})
-    new_row = {"Valve ID": valve_id, "Status": "Closed", "Flow (SLPM)": 0, "Pressure (bar)": 0, "Temperature (°C)": 25}
-    st.session_state['data'] = pd.concat([st.session_state['data'], pd.DataFrame([new_row])], ignore_index=True)
-
 if len(st.session_state['valves']) == 0:
-    st.sidebar.info("No valves added yet. Use the controls above to add one.")
+    st.sidebar.info("No valves detected. Add manually.")
+else:
+    st.sidebar.success(f"{len(st.session_state['valves'])} valves loaded from P&ID")
 
-# -------------------------------
-# TOGGLE VALVE STATUS
-# -------------------------------
-st.sidebar.divider()
-st.sidebar.subheader("Toggle Valves")
-
+# Toggle valve states
 for valve in st.session_state['valves']:
     if st.sidebar.button(f"{valve['id']} - {valve['status']}"):
         valve['status'] = "Open" if valve['status'] == "Closed" else "Closed"
@@ -57,7 +90,7 @@ for valve in st.session_state['valves']:
             st.session_state['data']['Valve ID'] == valve['id'], "Status"
         ] = valve['status']
 
-        # Simple simulation logic
+        # simulate flow and pressure
         if valve['status'] == "Open":
             flow = np.random.uniform(10, 100)
             pressure = np.random.uniform(1, 5)
@@ -72,9 +105,9 @@ for valve in st.session_state['valves']:
             ["Flow (SLPM)", "Pressure (bar)", "Temperature (°C)"]
         ] = [flow, pressure, temp]
 
-# -------------------------------
-# DRAW P&ID IMAGE WITH VALVES
-# -------------------------------
+# ------------------------------------
+# DRAW IMAGE WITH VALVES
+# ------------------------------------
 img = base_img.copy()
 draw = ImageDraw.Draw(img)
 w, h = img.size
@@ -87,18 +120,18 @@ for valve in st.session_state['valves']:
     draw.ellipse([(x - r, y - r), (x + r, y + r)], fill=color)
     draw.text((x + 20, y - 10), valve['id'], fill="white")
 
-st.image(img, caption="P&ID Simulation Display", use_container_width=True)
+st.image(img, caption="🧩 P&ID with Detected Valves", use_container_width=True)
 
-# -------------------------------
-# DISPLAY DATA TABLE
-# -------------------------------
+# ------------------------------------
+# EDITABLE TABLE
+# ------------------------------------
 st.subheader("📊 Valve Data Table (Editable)")
 edited_data = st.data_editor(st.session_state['data'], num_rows="dynamic", key="data_editor")
 st.session_state['data'] = edited_data
 
-# -------------------------------
-# EXPORT CSV OPTION
-# -------------------------------
+# ------------------------------------
+# DOWNLOAD CSV
+# ------------------------------------
 st.download_button(
     label="💾 Download CSV",
     data=st.session_state['data'].to_csv(index=False).encode('utf-8'),
@@ -106,17 +139,15 @@ st.download_button(
     mime="text/csv"
 )
 
-# -------------------------------
-# TREND VIEW
-# -------------------------------
+# ------------------------------------
+# TRENDS
+# ------------------------------------
 st.divider()
 st.subheader("📈 Valve Trends")
 
 if not st.session_state['data'].empty:
     selected_valve = st.selectbox("Select Valve for Trend", st.session_state['data']["Valve ID"].unique())
     valve_data = st.session_state['data'][st.session_state['data']["Valve ID"] == selected_valve]
-
-    import plotly.express as px
 
     c1, c2, c3 = st.columns(3)
 
@@ -132,4 +163,4 @@ if not st.session_state['data'].empty:
         fig_temp = px.bar(valve_data, x="Valve ID", y="Temperature (°C)", title="Temperature (°C)", color="Temperature (°C)")
         st.plotly_chart(fig_temp, use_container_width=True)
 else:
-    st.info("No data to plot yet. Add and toggle valves to generate data.")
+    st.info("No data to plot yet. Add or toggle valves to generate data.")
