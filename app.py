@@ -1,38 +1,42 @@
-# app.py
 import streamlit as st
 import cv2
 import pytesseract
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-import pandas as pd
+from PIL import Image, ImageDraw
 
-# -------------------- PAGE SETUP --------------------
-st.set_page_config(page_title="P&ID Valve HMI Simulator", layout="wide")
-st.title("🧠 P&ID Interactive Valve Simulator")
+# ------------------ PAGE SETUP ------------------
+st.set_page_config(page_title="P&ID Valve Simulator", layout="wide")
+st.title("🧠 P&ID Interactive Valve Simulator (with icons)")
 
-# -------------------- LOAD IMAGE --------------------
+# ------------------ LOAD IMAGES ------------------
 PID_FILE = "P&ID.png"
+VALVE_ICON_FILE = "valve_icon.png"  # your valve icon file
 
 try:
-    pid_image = Image.open(PID_FILE).convert("RGB")
+    pid_image = Image.open(PID_FILE).convert("RGBA")
 except FileNotFoundError:
     st.error(f"❌ Cannot find '{PID_FILE}'. Please upload it to the repo root.")
     st.stop()
 
-# Convert for OpenCV
+try:
+    valve_icon = Image.open(VALVE_ICON_FILE).convert("RGBA")
+except FileNotFoundError:
+    st.error(f"❌ Cannot find '{VALVE_ICON_FILE}'. Please upload it to the repo root.")
+    st.stop()
+
+# Convert to OpenCV for OCR
 img_cv = np.array(pid_image)
 img_gray = cv2.cvtColor(img_cv, cv2.COLOR_RGB2GRAY)
 
-# -------------------- OCR DETECTION --------------------
+# ------------------ OCR DETECTION ------------------
 st.sidebar.header("OCR Settings")
 threshold = st.sidebar.slider("Detection Confidence", 0, 100, 60, 5)
 
-st.write("🔍 Detecting valve tags using OCR... (this may take a few seconds)")
+st.write("🔍 Detecting valve tags...")
 
-# Extract text data
 ocr_data = pytesseract.image_to_data(img_gray, output_type=pytesseract.Output.DICT)
 
-# Define expected tags
+# Expected valve tags
 expected_tags = [
     "V-101", "V-102", "V-103", "V-104",
     "V-301", "V-302", "V-303",
@@ -42,10 +46,9 @@ expected_tags = [
 ]
 
 detected_tags = []
-for i, text in enumerate(ocr_data['text']):
-    # ---- SAFE confidence handling ----
+for i, text in enumerate(ocr_data["text"]):
     try:
-        conf_str = str(ocr_data['conf'][i])
+        conf_str = str(ocr_data["conf"][i])
         conf = int(float(conf_str)) if conf_str not in ["", "nan"] else 0
     except Exception:
         conf = 0
@@ -57,10 +60,10 @@ for i, text in enumerate(ocr_data['text']):
     for tag in expected_tags:
         if tag in txt:
             x, y, w, h = (
-                int(ocr_data['left'][i]),
-                int(ocr_data['top'][i]),
-                int(ocr_data['width'][i]),
-                int(ocr_data['height'][i])
+                int(ocr_data["left"][i]),
+                int(ocr_data["top"][i]),
+                int(ocr_data["width"][i]),
+                int(ocr_data["height"][i]),
             )
             detected_tags.append((tag, x, y, w, h))
             break
@@ -70,47 +73,34 @@ if not detected_tags:
 else:
     st.success(f"✅ Detected {len(detected_tags)} valve tag(s).")
 
-# -------------------- DRAW ON IMAGE --------------------
+# ------------------ DRAW VALVE ICONS ------------------
 display_img = pid_image.copy()
-draw = ImageDraw.Draw(display_img)
-try:
-    font = ImageFont.truetype("DejaVuSans.ttf", 16)
-except:
-    font = ImageFont.load_default()
+
+# Scale icon smaller
+icon_size = (40, 40)
+valve_icon_resized = valve_icon.resize(icon_size)
+
+# Create toggle states
+st.sidebar.header("Valve Control Panel")
+valve_states = {}
 
 for tag, x, y, w, h in detected_tags:
-    draw.rectangle([x, y, x + w, y + h], outline="lime", width=2)
-    draw.text((x, y - 12), tag, fill="yellow", font=font)
+    valve_states[tag] = st.sidebar.toggle(f"{tag}", value=False)
 
-st.image(display_img, caption="Detected Valve Tags", use_container_width=True)
+# Overlay valves on top of P&ID
+for tag, x, y, w, h in detected_tags:
+    icon_x, icon_y = x, y - 20
+    state = valve_states[tag]
 
-# -------------------- INTERACTIVE CONTROL --------------------
-st.sidebar.header("Valve Control Panel")
+    # Change color dynamically (green open / red closed)
+    icon = valve_icon_resized.copy()
+    color_overlay = Image.new("RGBA", icon.size, (0, 255, 0, 120) if state else (255, 0, 0, 120))
+    icon = Image.alpha_composite(icon, color_overlay)
 
-valve_states = {}
-for tag, *_ in detected_tags:
-    state = st.sidebar.toggle(f"{tag}", value=False)
-    valve_states[tag] = "OPEN" if state else "CLOSED"
+    display_img.paste(icon, (icon_x, icon_y), icon)
 
-# -------------------- HMI SIMULATION TABLE --------------------
-if detected_tags:
-    st.subheader("🧩 Live HMI Readings")
+st.image(display_img, caption="Interactive P&ID with Valve Icons", use_container_width=True)
 
-    data = []
-    np.random.seed(42)
-
-    for tag, *_ in detected_tags:
-        open_state = valve_states[tag] == "OPEN"
-        flow = np.random.uniform(10, 30) if open_state else 0
-        pressure = np.random.uniform(3, 8) if open_state else np.random.uniform(8, 10)
-        data.append({
-            "Tag": tag,
-            "State": valve_states[tag],
-            "Flow (SLPM)": round(flow, 2),
-            "Pressure (bar)": round(pressure, 2)
-        })
-
-    df = pd.DataFrame(data)
-    st.dataframe(df, use_container_width=True)
-else:
-    st.info("Run OCR detection to see live valve readings.")
+# ------------------ DISPLAY STATES ------------------
+st.subheader("🧩 Live Valve States")
+st.json({tag: "OPEN" if state else "CLOSED" for tag, state in valve_states.items()})
