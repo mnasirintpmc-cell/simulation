@@ -236,22 +236,36 @@ with st.expander("Click here to see your current valve positions and help config
     st.markdown("3. **Valve connections** (which valves connect to which pipes)")
     
     st.markdown("**Example format:**")
-    st.code("""
-    pipe_segments = {
-        "section_1": {
-            "coords": [(x1,y1,x2,y2), (x2,y2,x3,y3)],  # Pipe line coordinates
-            "flow_logic": ["V-101"]  # Valves needed for flow
-        },
-        "section_2": {
-            "coords": [(x3,y3,x4,y4)],
-            "flow_logic": ["V-101", "V-301"]
-        }
+    st.code("""pipe_segments = {
+    "section_1": {
+        "coords": [(x1,y1,x2,y2), (x2,y2,x3,y3)],  # Pipe line coordinates
+        "flow_logic": ["V-101"]  # Valves needed for flow
+    },
+    "section_2": {
+        "coords": [(x3,y3,x4,y4)],
+        "flow_logic": ["V-101", "V-301"]
     }
-    """)
+}""")
 
 # Tell me your actual flow scenarios!
 st.markdown("---")
 st.markdown("### 📝 Please Provide Your Flow Scenarios")
 
-st.markdown("""
-**Copy-paste this template and fill in your actual flow logic:**
+st.markdown("**Copy-paste this template and fill in your actual flow logic:**")
+
+st.code("""Section 1: [V-101] to [V-301] 
+- Coordinates: [x1,y1,x2,y2], [x2,y2,x3,y3]
+- Flow requires: [V-101]
+
+Section 2: [V-301] to [V-105]
+- Coordinates: [x3,y3,x4,y4]  
+- Flow requires: [V-101, V-301]
+
+Section 3: [V-105] to [destination]
+- Coordinates: [x4,y4,x5,y5]
+- Flow requires: [V-101, V-301, V-105]""")
+
+st.markdown("**Also tell me:**")
+st.markdown("- What other valves do you have? (V-102, V-103, V-104, etc.)")
+st.markdown("- How are they connected?")
+st.markdown("- What's the overall flow path?")
