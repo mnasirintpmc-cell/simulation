@@ -34,8 +34,8 @@ def create_pid_with_valves_and_buttons():
             draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
             draw.text((x+12, y-10), tag, fill="white", stroke_fill="black", stroke_width=1)
             
-            # Store button position (shifted above the valve)
-            button_positions[tag] = (x, y - 40)
+            # Store button position (shifted to the left of the valve)
+            button_positions[tag] = (x - 80, y)
             
         return pid_img.convert("RGB"), button_positions
     except Exception as e:
@@ -94,41 +94,60 @@ for i, (tag, data) in enumerate(valves.items()):
         # Show position info
         st.caption(f"Position: ({data['x']}, {data['y']})")
 
+# Alternative: Left-aligned controls for each valve
+st.markdown("---")
+st.markdown("### Quick Valve Toggles")
+
+# Create a more compact layout with valves grouped by rows
+valve_list = list(valves.items())
+num_per_row = 5  # Adjust based on how many valves you have
+
+for i in range(0, len(valve_list), num_per_row):
+    row_valves = valve_list[i:i + num_per_row]
+    cols = st.columns(len(row_valves))
+    
+    for col_idx, (tag, data) in enumerate(row_valves):
+        with cols[col_idx]:
+            current_state = st.session_state.valve_states[tag]
+            
+            # More compact button design
+            if current_state:
+                compact_label = f"🔴 {tag}"
+                button_help = f"Click to close {tag}"
+            else:
+                compact_label = f"🟢 {tag}"
+                button_help = f"Click to open {tag}"
+            
+            if st.button(compact_label, key=f"compact_{tag}", help=button_help, use_container_width=True):
+                st.session_state.valve_states[tag] = not current_state
+                st.rerun()
+
 # Current status display
 st.markdown("---")
 st.markdown("### Current Valve Status")
 
-# Create a nice status table
-status_data = []
-for tag, data in valves.items():
-    current_state = st.session_state.valve_states[tag]
-    status_data.append({
-        "Valve": tag,
-        "Status": "🟢 OPEN" if current_state else "🔴 CLOSED",
-        "Position": f"({data['x']}, {data['y']})"
-    })
-
-# Display as columns for better layout
-if status_data:
-    num_cols = min(3, len(status_data))
-    status_cols = st.columns(num_cols)
+# Display status in a clean table format
+for i in range(0, len(valves), 3):
+    cols = st.columns(3)
+    valve_items = list(valves.items())[i:i + 3]
     
-    for i, status in enumerate(status_data):
-        col_idx = i % num_cols
-        with status_cols[col_idx]:
-            st.metric(
-                label=status["Valve"],
-                value=status["Status"],
-                delta=status["Position"]
-            )
+    for col_idx, (tag, data) in enumerate(valve_items):
+        with cols[col_idx]:
+            current_state = st.session_state.valve_states[tag]
+            status = "🟢 OPEN" if current_state else "🔴 CLOSED"
+            
+            st.write(f"**{tag}**")
+            st.write(f"Status: {status}")
+            st.write(f"Position: ({data['x']}, {data['y']})")
+            st.progress(100 if current_state else 0)
 
 # Instructions
 st.markdown("---")
 st.markdown("### Instructions")
 st.markdown("""
 - **Green circles** on the P&ID indicate OPEN valves
-- **Red circles** on the P&ID indicate CLOSED valves
-- Click the buttons above to toggle valve states
+- **Red circles** on the P&ID indicate CLOSED valves  
+- Click any valve button above to toggle its state
 - Valve positions are fixed from your JSON configuration
 - All changes are temporary (not saved to file)
 """)
@@ -137,4 +156,9 @@ st.markdown("""
 with st.expander("🔧 Configuration Details"):
     st.write("**Loaded Valves:**", valves)
     st.write("**Current States:**", st.session_state.valve_states)
-    st.write("**Button Positions:**", button_positions)
+    st.write("**Total Valves:**", len(valves))
+    
+    # Show valve positions
+    st.write("**Valve Positions:**")
+    for tag, data in valves.items():
+        st.write(f"- {tag}: ({data['x']}, {data['y']}) - {'OPEN' if st.session_state.valve_states[tag] else 'CLOSED'}")
