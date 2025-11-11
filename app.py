@@ -10,6 +10,7 @@ PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
 
 def initialize_valve_data():
+    """Initialize with empty valve data"""
     return {}
 
 def save_valves(valves_data):
@@ -22,140 +23,131 @@ def load_valves():
             return json.load(f)
     return initialize_valve_data()
 
-# Initialize session state
+# Load or initialize valve data
 if "valves" not in st.session_state:
     st.session_state.valves = load_valves()
 
-if "positions_locked" not in st.session_state:
-    st.session_state.positions_locked = False
+# Main app
+st.title("P&ID Valve Extractor")
+st.markdown("### Step 1: Identify Valves on Your P&ID")
 
-def create_pid_with_valves():
-    """Create P&ID image with valve overlays - FIXED VERSION"""
+# Display the P&ID
+try:
+    pid_img = Image.open(PID_FILE)
+    st.image(pid_img, use_column_width=True, caption="Your P&ID - Identify valve tags")
+except Exception as e:
+    st.error(f"Could not load P&ID image: {e}")
+    st.stop()
+
+st.markdown("---")
+st.markdown("### Step 2: Add Valves Found on Your P&ID")
+
+# Valve management
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Add New Valve")
+    
+    with st.form("add_valve_form"):
+        valve_tag = st.text_input("Valve Tag (e.g., V-101, V-102):")
+        default_x = st.number_input("X Position", value=100)
+        default_y = st.number_input("Y Position", value=100)
+        initial_state = st.selectbox("Initial State", ["Closed", "Open"])
+        
+        if st.form_submit_button("Add Valve"):
+            if valve_tag and valve_tag.strip():
+                tag = valve_tag.strip()
+                st.session_state.valves[tag] = {
+                    "x": int(default_x),
+                    "y": int(default_y), 
+                    "state": (initial_state == "Open")
+                }
+                save_valves(st.session_state.valves)
+                st.success(f"Added valve {tag}")
+                st.rerun()
+            else:
+                st.error("Please enter a valve tag")
+
+with col2:
+    st.subheader("Current Valves")
+    if st.session_state.valves:
+        for tag, data in st.session_state.valves.items():
+            status = "OPEN" if data["state"] else "CLOSED"
+            st.write(f"**{tag}** - {status} - Position: ({data['x']}, {data['y']})")
+            
+            col_edit, col_del = st.columns(2)
+            with col_edit:
+                if st.button(f"Edit 📍", key=f"edit_{tag}"):
+                    st.session_state.editing_valve = tag
+            with col_del:
+                if st.button(f"Delete 🗑️", key=f"del_{tag}"):
+                    del st.session_state.valves[tag]
+                    save_valves(st.session_state.valves)
+                    st.rerun()
+    else:
+        st.info("No valves added yet. Use the form to add valves from your P&ID.")
+
+st.markdown("---")
+st.markdown("### Step 3: Position Valves on P&ID")
+
+if st.session_state.valves:
+    # Create image with valve markers
     try:
-        pid_img = Image.open(PID_FILE).convert("RGBA")
-        draw = ImageDraw.Draw(pid_img)
+        pid_with_markers = pid_img.copy().convert("RGBA")
+        draw = ImageDraw.Draw(pid_with_markers)
         
         for tag, data in st.session_state.valves.items():
             x, y = data["x"], data["y"]
+            color = (0, 255, 0) if data["state"] else (255, 0, 0)  # Green if open, red if closed
             
-            # Choose color based on valve state
-            if data["state"]:  # Open
-                color = (0, 255, 0)  # Green
-                status_text = "OPEN"
-            else:  # Closed
-                color = (255, 0, 0)  # Red
-                status_text = "CLOSED"
-            
-            # FIXED: Correct ellipse coordinates - last should be y+8, not x+8
-            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
-            
-            # Draw tag and status
-            draw.text((x+12, y-20), tag, fill="white", stroke_fill="black", stroke_width=1)
-            draw.text((x+12, y-5), status_text, fill="white", stroke_fill="black", stroke_width=1)
-            
-        return pid_img.convert("RGB")
+            # Draw a circle marker
+            draw.ellipse([x-10, y-10, x+10, y+10], fill=color, outline="white", width=2)
+            # Draw valve tag text
+            draw.text((x+15, y-15), tag, fill="white", stroke_fill="black", stroke_width=2)
+        
+        st.image(pid_with_markers, use_column_width=True, caption="P&ID with Valve Markers")
+        
     except Exception as e:
-        st.error(f"Error creating P&ID image: {e}")
-        # Return original image if there's an error
-        try:
-            return Image.open(PID_FILE).convert("RGB")
-        except:
-            return Image.new("RGB", (800, 600), (255, 255, 255))
+        st.error(f"Error drawing valve markers: {e}")
+        st.image(pid_img, use_column_width=True, caption="Original P&ID")
 
-# Main app
-st.title("P&ID Interactive Simulation")
-st.markdown("### Valve Controls")
-
-# Simple lock control
-if st.session_state.positions_locked:
-    if st.button("🔓 Unlock Valve Positions"):
-        st.session_state.positions_locked = False
-        st.rerun()
-else:
-    if st.button("🔒 Lock Valve Positions"):
-        st.session_state.positions_locked = True
-        st.rerun()
-
-# Display the P&ID with valves
-composite_img = create_pid_with_valves()
-st.image(composite_img, use_column_width=True, caption="Interactive P&ID - Click buttons below to toggle valves")
-
-# Simple valve toggle buttons
-st.markdown("### Toggle Valves")
-
+# Valve position adjustment
 if st.session_state.valves:
-    # Create columns for valve buttons
-    num_cols = min(4, len(st.session_state.valves))
-    columns = st.columns(num_cols)
+    st.markdown("### Step 4: Adjust Valve Positions")
     
-    for i, (tag, data) in enumerate(st.session_state.valves.items()):
-        col_idx = i % num_cols
-        with columns[col_idx]:
-            status = "OPEN" if data["state"] else "CLOSED"
-            button_text = f"🔴 Close {tag}" if data["state"] else f"🟢 Open {tag}"
-            
-            if st.button(button_text, key=f"toggle_{tag}", use_container_width=True):
-                st.session_state.valves[tag]["state"] = not st.session_state.valves[tag]["state"]
+    selected_valve = st.selectbox("Select valve to adjust position:", list(st.session_state.valves.keys()))
+    
+    if selected_valve:
+        data = st.session_state.valves[selected_valve]
+        col_x, col_y, col_btn = st.columns([1, 1, 1])
+        
+        with col_x:
+            new_x = st.number_input("X Position", value=data["x"], key="adj_x")
+        with col_y:
+            new_y = st.number_input("Y Position", value=data["y"], key="adj_y")
+        with col_btn:
+            if st.button("Update Position"):
+                st.session_state.valves[selected_valve]["x"] = int(new_x)
+                st.session_state.valves[selected_valve]["y"] = int(new_y)
                 save_valves(st.session_state.valves)
+                st.success(f"Updated position for {selected_valve}")
                 st.rerun()
-            
-            st.caption(f"Position: ({data['x']}, {data['y']}) - {status}")
-else:
-    st.info("No valves configured. Add valves below.")
 
-# Valve management (only when unlocked)
-if not st.session_state.positions_locked:
-    st.markdown("---")
-    st.markdown("### Manage Valves")
+# Instructions
+with st.expander("📋 Instructions"):
+    st.markdown("""
+    1. **Identify Valves**: Look at your P&ID above and identify all valve tags (like V-101, V-102, etc.)
+    2. **Add Valves**: Use the form to add each valve with its tag and approximate position
+    3. **Position Valves**: Adjust the X,Y coordinates to place markers exactly where valves are on the P&ID
+    4. **Test**: Once all valves are added, you'll be able to open/close them interactively
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Add New Valve")
-        with st.form("add_valve"):
-            valve_tag = st.text_input("Valve Tag (e.g., V-101):")
-            col_x, col_y = st.columns(2)
-            with col_x:
-                x_pos = st.number_input("X Position", value=100)
-            with col_y:
-                y_pos = st.number_input("Y Position", value=100)
-            
-            if st.form_submit_button("Add Valve"):
-                if valve_tag and valve_tag.strip():
-                    tag = valve_tag.strip().upper()
-                    st.session_state.valves[tag] = {
-                        "x": int(x_pos),
-                        "y": int(y_pos),
-                        "state": False
-                    }
-                    save_valves(st.session_state.valves)
-                    st.success(f"Added {tag}")
-                    st.rerun()
+    **Tips**:
+    - Start by adding just 2-3 valves to test
+    - Use the position adjustment to fine-tune valve locations
+    - Valve positions are saved automatically
+    """)
 
-    with col2:
-        st.subheader("Adjust Positions")
-        if st.session_state.valves:
-            selected_valve = st.selectbox("Select valve:", list(st.session_state.valves.keys()))
-            if selected_valve:
-                data = st.session_state.valves[selected_valve]
-                new_x = st.number_input("X", value=data["x"], key="edit_x")
-                new_y = st.number_input("Y", value=data["y"], key="edit_y")
-                
-                if st.button("Update Position"):
-                    st.session_state.valves[selected_valve]["x"] = int(new_x)
-                    st.session_state.valves[selected_valve]["y"] = int(new_y)
-                    save_valves(st.session_state.valves)
-                    st.success("Position updated!")
-                    st.rerun()
-
-# Current status
-st.markdown("---")
-st.markdown("### Current Status")
-for tag, data in st.session_state.valves.items():
-    status = "🟢 OPEN" if data["state"] else "🔴 CLOSED"
-    st.write(f"**{tag}**: {status} at position ({data['x']}, {data['y']})")
-
-# Save button
-if st.button("💾 Save Configuration"):
-    save_valves(st.session_state.valves)
-    st.success("Configuration saved!")
+# Debug info
+with st.expander("🔧 Debug Information"):
+    st.write("Current valve data:", st.session_state.valves)
+    st.write(f"Total valves: {len(st.session_state.valves)}")
