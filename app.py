@@ -118,24 +118,22 @@ st.image(analysis_img, use_container_width=True, caption="P&ID with Coordinate G
 # Manual Pipe Configuration Section
 st.header("3. Manual Pipe Path Configuration")
 
-st.markdown("""
-### 🎯 How to Map Your P&ID:
+st.markdown("### 🎯 How to Map Your P&ID:")
 
-**Step 1: Trace Pipe Paths**
-- Follow each pipe from start to end
-- Note the (x,y) coordinates where pipes change direction
-- Pipes are typically straight lines between fittings
+st.markdown("**Step 1: Trace Pipe Paths**")
+st.markdown("- Follow each pipe from start to end")
+st.markdown("- Note the (x,y) coordinates where pipes change direction")
+st.markdown("- Pipes are typically straight lines between fittings")
 
-**Step 2: Identify Valve Locations**
-- Valves are usually shown as circles or specific symbols
-- Note the exact (x,y) coordinates of each valve
-- Valves break pipe continuity
+st.markdown("**Step 2: Identify Valve Locations**")
+st.markdown("- Valves are usually shown as circles or specific symbols")
+st.markdown("- Note the exact (x,y) coordinates of each valve")
+st.markdown("- Valves break pipe continuity")
 
-**Step 3: Define Flow Logic**
-- Flow requires continuous open path from source to destination
-- Each closed valve blocks flow in its section
-- Multiple valves may control complex paths
-""")
+st.markdown("**Step 3: Define Flow Logic**")
+st.markdown("- Flow requires continuous open path from source to destination")
+st.markdown("- Each closed valve blocks flow in its section")
+st.markdown("- Multiple valves may control complex paths")
 
 # Current valve positions display
 st.header("4. Current Valve Configuration")
@@ -196,11 +194,9 @@ with st.form("pipe_mapping_form"):
 # Template for providing your actual P&ID data
 st.header("6. Provide Your P&ID Data")
 
-st.markdown("""
-### 📋 Copy this template and fill with your actual P&ID data:
+st.markdown("### 📋 Copy this template and fill with your actual P&ID data:")
 
-```python
-# VALVE POSITIONS (from your valves.json - already done)
+st.code("""# VALVE POSITIONS (from your valves.json - already done)
 # V-101: (x, y)
 # V-301: (x, y) 
 # V-105: (x, y)
@@ -234,4 +230,41 @@ pipe_segments = {
         ],
         "flow_logic": ["V-101", "V-301", "V-105"]  # Needs all three valves
     }
-}
+}""")
+
+st.markdown("### 🎯 What I Need From You:")
+
+st.markdown("1. **Trace each pipe** on your P&ID and provide the (x,y) coordinates")
+st.markdown("2. **Tell me the flow logic** - which valves control which sections")
+st.markdown("3. **Identify all components** - pumps, tanks, instruments")
+st.markdown("4. **Describe the overall process flow** - source to destination")
+
+# Quick Help Section
+with st.expander("🔍 Mechanical Analysis Tips"):
+    st.markdown("**P&ID Reading Fundamentals:**")
+    st.markdown("- **Pipes**: Solid lines, follow the flow path")
+    st.markdown("- **Valves**: Circles/diamonds that break pipe continuity")  
+    st.markdown("- **Flow Direction**: Typically left-to-right or top-to-bottom")
+    st.markdown("- **Fittings**: Elbows, tees, reducers where pipes change direction")
+    
+    st.markdown("**Coordinate Mapping:**")
+    st.markdown("- Start at component center points")
+    st.markdown("- Follow pipe centerlines")
+    st.markdown("- Note coordinates at every direction change")
+    st.markdown("- Include all valves in the flow path")
+    
+    st.markdown("**Flow Logic Rules:**")
+    st.markdown("- Flow requires continuous open path")
+    st.markdown("- Each closed valve blocks its section")
+    st.markdown("- Multiple valves create complex logic")
+    st.markdown("- Source valve (like V-101) controls entire system")
+
+# Next Steps
+st.header("🎯 Next Steps")
+st.markdown("1. **Study your P&ID** and trace the main flow paths")
+st.markdown("2. **Note down coordinates** using the grid above")  
+st.markdown("3. **Identify all valves** and their positions")
+st.markdown("4. **Describe the flow logic** for each pipe section")
+st.markdown("5. **Provide this information** so I can build accurate flow simulation")
+
+st.markdown("**Once you provide the pipe coordinates and flow logic, I'll create the exact simulation you need!**")
