@@ -6,7 +6,7 @@ import io
 import os
 
 st.set_page_config(page_title="P&ID Manual Placement (Option B)", layout="wide")
-st.title("📌 P&ID Manual Placement & HMI — Option B (Fixed Overlay)")
+st.title("📌 P&ID Manual Placement & HMI — Option B (Fixed for Pillow ≥10)")
 
 PID_FN = "P&ID.png"
 ICON_FN = "valve_icon.png"
@@ -24,6 +24,20 @@ def load_image(fn):
         return None
     return Image.open(fn).convert("RGBA")
 
+def measure_text(draw, text, font):
+    """Get text width/height safely for all Pillow versions."""
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        width = bbox[2] - bbox[0]
+        height = bbox[3] - bbox[1]
+        return width, height
+    except Exception:
+        try:
+            width, height = font.getsize(text)
+            return width, height
+        except Exception:
+            return (len(text) * 7, 12)
+
 def draw_overlay(base_img, positions, states, icon_img, icon_scale_pct=4):
     out = base_img.copy()
     w, h = out.size
@@ -32,13 +46,12 @@ def draw_overlay(base_img, positions, states, icon_img, icon_scale_pct=4):
     icon_h = int(icon_w * icon_img.height / max(1, icon_img.width))
     icon_resized = icon_img.resize((icon_w, icon_h), Image.LANCZOS)
 
-    # base overlay to paste all icons into
     overlay = Image.new("RGBA", out.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", max(12, int(icon_w/3)))
     except Exception:
-        font = None
+        font = ImageFont.load_default()
 
     for tag, pos in positions.items():
         try:
@@ -59,15 +72,16 @@ def draw_overlay(base_img, positions, states, icon_img, icon_scale_pct=4):
         overlay.paste(icon, top_left, icon)
 
         text = tag
-        text_w, text_h = draw.textsize(text, font=font) if font else (len(text)*7, 12)
+        text_w, text_h = measure_text(draw, text, font)
         label_x = top_left[0] + icon.size[0] + 6
         label_y = top_left[1]
-        draw.rectangle([label_x-2, label_y-2, label_x+text_w+4, label_y+text_h+2], fill=(0,0,0,160))
+        draw.rectangle(
+            [label_x-2, label_y-2, label_x+text_w+4, label_y+text_h+2],
+            fill=(0,0,0,160)
+        )
         draw.text((label_x, label_y), text, fill=(255,255,255,255), font=font)
 
-    # merge overlays
     merged = Image.alpha_composite(out, overlay)
-    # flatten transparency for Streamlit display
     display = merged.convert("RGB")
     return display
 
@@ -118,7 +132,13 @@ with left:
         )
 
 with right:
-    overlay_img = draw_overlay(pid_img, st.session_state.positions, st.session_state.states, icon_img, icon_scale_pct=st.session_state.icon_scale)
+    overlay_img = draw_overlay(
+        pid_img,
+        st.session_state.positions,
+        st.session_state.states,
+        icon_img,
+        icon_scale_pct=st.session_state.icon_scale
+    )
     st.image(overlay_img, use_container_width=True)
     if not st.session_state.positions:
         st.info("No valves placed yet — select a tag and save position on the left.")
