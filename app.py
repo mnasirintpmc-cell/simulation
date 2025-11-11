@@ -2,121 +2,152 @@ import streamlit as st
 import json
 from PIL import Image, ImageDraw
 import os
-import io
-
-PID_FILE = "P&ID.png"
-VALVE_FILE = "valve_icon.png"
-DATA_FILE = "valves.json"
 
 st.set_page_config(layout="wide")
 
-# Load/save valve data
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-        valves = json.load(f)
-else:
-    valves = {
-        "valve_2": {"x": 220, "y": 150, "state": False},
-        "valve_3": {"x": 300, "y": 200, "state": False},
-        "valve_4": {"x": 400, "y": 250, "state": False},
-        "valve_5": {"x": 500, "y": 300, "state": False},
-        "valve_6": {"x": 600, "y": 350, "state": False},
-    }
+# Configuration
+PID_FILE = "P&ID.png"
+DATA_FILE = "valves.json"
 
-# Initialize session state
-if "valves" not in st.session_state:
-    st.session_state.valves = valves
+def initialize_valve_data():
+    """Initialize with empty valve data - we'll populate this from your P&ID"""
+    return {}
 
-def save_valves():
+def save_valves(valves_data):
     with open(DATA_FILE, "w") as f:
-        json.dump(st.session_state.valves, f, indent=4)
+        json.dump(valves_data, f, indent=4)
 
-def create_pid_with_valves():
-    """Create P&ID image with valve overlays"""
-    # Load base P&ID
-    pid_img = Image.open(PID_FILE).convert("RGBA")
+def load_valves():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return initialize_valve_data()
+
+# Load or initialize valve data
+if "valves" not in st.session_state:
+    st.session_state.valves = load_valves()
+
+# Main app
+st.title("P&ID Valve Extractor")
+st.markdown("### Step 1: Identify Valves on Your P&ID")
+
+# Display the P&ID
+try:
+    pid_img = Image.open(PID_FILE)
+    st.image(pid_img, use_column_width=True, caption="Your P&ID - Identify valve tags")
+except Exception as e:
+    st.error(f"Could not load P&ID image: {e}")
+    st.stop()
+
+st.markdown("---")
+st.markdown("### Step 2: Add Valves Found on Your P&ID")
+
+# Valve management
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Add New Valve")
     
-    # Load valve icon
+    with st.form("add_valve_form"):
+        valve_tag = st.text_input("Valve Tag (e.g., V-101, V-102):")
+        default_x = st.number_input("X Position", value=100)
+        default_y = st.number_input("Y Position", value=100)
+        initial_state = st.selectbox("Initial State", ["Closed", "Open"])
+        
+        if st.form_submit_button("Add Valve"):
+            if valve_tag and valve_tag.strip():
+                tag = valve_tag.strip()
+                st.session_state.valves[tag] = {
+                    "x": int(default_x),
+                    "y": int(default_y), 
+                    "state": (initial_state == "Open")
+                }
+                save_valves(st.session_state.valves)
+                st.success(f"Added valve {tag}")
+                st.rerun()
+            else:
+                st.error("Please enter a valve tag")
+
+with col2:
+    st.subheader("Current Valves")
+    if st.session_state.valves:
+        for tag, data in st.session_state.valves.items():
+            status = "🟢 OPEN" if data["state"] else "🔴 CLOSED"
+            st.write(f"**{tag}** - {status} - Position: ({data['x']}, {data['y']})")
+            
+            col_edit, col_del = st.columns(2)
+            with col_edit:
+                if st.button(f"Edit 📍", key=f"edit_{tag}"):
+                    st.session_state.editing_valve = tag
+            with col_del:
+                if st.button(f"Delete 🗑️", key=f"del_{tag}"):
+                    del st.session_state.valves[tag]
+                    save_valves(st.session_state.valves)
+                    st.rerun()
+    else:
+        st.info("No valves added yet. Use the form to add valves from your P&ID.")
+
+st.markdown("---")
+st.markdown("### Step 3: Position Valves on P&ID")
+
+if st.session_state.valves:
+    # Create image with valve markers
     try:
-        valve_icon = Image.open(VALVE_FILE).convert("RGBA")
-    except:
-        # Create a simple valve icon if file not found
-        valve_icon = Image.new("RGBA", (30, 30), (255, 255, 255, 0))
-        draw = ImageDraw.Draw(valve_icon)
-        draw.rectangle([5, 5, 25, 25], fill=(255, 0, 0, 255))
-    
-    # Create a copy to draw on
-    composite = pid_img.copy()
-    
-    # Overlay valves
-    for name, data in st.session_state.valves.items():
-        # Resize valve icon
-        valve_resized = valve_icon.resize((25, 25))
+        pid_with_markers = pid_img.copy().convert("RGBA")
+        draw = ImageDraw.Draw(pid_with_markers)
         
-        # Change color based on state
-        if data["state"]:  # Open - green
-            valve_colored = Image.new("RGBA", valve_resized.size, (0, 255, 0, 255))
-        else:  # Closed - red
-            valve_colored = Image.new("RGBA", valve_resized.size, (255, 0, 0, 255))
+        for tag, data in st.session_state.valves.items():
+            x, y = data["x"], data["y"]
+            color = (0, 255, 0) if data["state"] else (255, 0, 0)  # Green if open, red if closed
+            
+            # Draw a circle marker
+            draw.ellipse([x-10, y-10, x+10, y+10], fill=color, outline="white", width=2)
+            # Draw valve tag text
+            draw.text((x+15, y-15), tag, fill="white", stroke_fill="black", stroke_width=2)
         
-        # Paste valve onto composite
-        composite.paste(valve_colored, (data["x"], data["y"]), valve_resized)
-    
-    return composite
-
-# Create and display the P&ID with valves
-composite_img = create_pid_with_valves()
-
-# Convert to RGB for display
-composite_rgb = composite_img.convert("RGB")
-
-# Display the composite image
-st.image(composite_rgb, use_column_width=True, caption="Interactive P&ID")
-
-# Valve controls
-st.subheader("Valve Controls")
-col1, col2, col3, col4, col5 = st.columns(5)
-
-valve_columns = [col1, col2, col3, col4, col5]
-valve_names = list(st.session_state.valves.keys())
-
-for i, name in enumerate(valve_names):
-    with valve_columns[i]:
-        data = st.session_state.valves[name]
-        status = "OPEN" if data["state"] else "CLOSED"
-        color = "🟢" if data["state"] else "🔴"
+        st.image(pid_with_markers, use_column_width=True, caption="P&ID with Valve Markers")
         
-        st.write(f"**{name}**")
-        st.write(f"Status: {color} {status}")
+    except Exception as e:
+        st.error(f"Error drawing valve markers: {e}")
+        st.image(pid_img, use_column_width=True, caption="Original P&ID")
+
+# Valve position adjustment
+if st.session_state.valves:
+    st.markdown("### Step 4: Adjust Valve Positions")
+    
+    selected_valve = st.selectbox("Select valve to adjust position:", list(st.session_state.valves.keys()))
+    
+    if selected_valve:
+        data = st.session_state.valves[selected_valve]
+        col_x, col_y, col_btn = st.columns([1, 1, 1])
         
-        if st.button(f"Toggle {name}", key=f"btn_{name}"):
-            st.session_state.valves[name]["state"] = not st.session_state.valves[name]["state"]
-            save_valves()
-            st.rerun()
+        with col_x:
+            new_x = st.number_input("X Position", value=data["x"], key="adj_x")
+        with col_y:
+            new_y = st.number_input("Y Position", value=data["y"], key="adj_y")
+        with col_btn:
+            if st.button("Update Position"):
+                st.session_state.valves[selected_valve]["x"] = int(new_x)
+                st.session_state.valves[selected_valve]["y"] = int(new_y)
+                save_valves(st.session_state.valves)
+                st.success(f"Updated position for {selected_valve}")
+                st.rerun()
 
-# Sidebar for position adjustment
-st.sidebar.header("Valve Position Adjustment")
-selected_valve = st.sidebar.selectbox("Select Valve", list(st.session_state.valves.keys()))
-
-if selected_valve:
-    current_data = st.session_state.valves[selected_valve]
-    col_x, col_y = st.sidebar.columns(2)
+# Instructions
+with st.expander("📋 Instructions"):
+    st.markdown("""
+    1. **Identify Valves**: Look at your P&ID above and identify all valve tags (like V-101, V-102, etc.)
+    2. **Add Valves**: Use the form to add each valve with its tag and approximate position
+    3. **Position Valves**: Adjust the X,Y coordinates to place markers exactly where valves are on the P&ID
+    4. **Test**: Once all valves are added, you'll be able to open/close them interactively
     
-    with col_x:
-        new_x = st.number_input("X Position", value=current_data["x"], key="x_pos")
-    with col_y:
-        new_y = st.number_input("Y Position", value=current_data["y"], key="y_pos")
-    
-    if st.sidebar.button("💾 Save Position"):
-        st.session_state.valves[selected_valve]["x"] = int(new_x)
-        st.session_state.valves[selected_valve]["y"] = int(new_y)
-        save_valves()
-        st.sidebar.success(f"Position saved for {selected_valve}!")
-        st.rerun()
+    **Tips**:
+    - Start by adding just 2-3 valves to test
+    - Use the position adjustment to fine-tune valve locations
+    - Valve positions are saved automatically
+    """)
 
-# Display current valve states
-st.sidebar.header("Current Valve States")
-for name, data in st.session_state.valves.items():
-    status = "OPEN" if data["state"] else "CLOSED"
-    color = "🟢" if data["state"] else "🔴"
-    st.sidebar.write(f"{color} {name}: {status} (X:{data['x']}, Y:{data['y']})")
+# Debug info
+with st.expander("🔧 Debug Information"):
+    st.write("Current valve data:", st.session_state.valves)
+    st.write(f"Total valves: {len(st.session_state.valves)}")
