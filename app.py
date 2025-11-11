@@ -1,93 +1,81 @@
 import streamlit as st
-from PIL import Image
 import json
 import os
 
-# ------------------------------------------------------------------
-# CONFIG
-# ------------------------------------------------------------------
-PID_IMAGE = "P&ID.png"
-VALVE_ICON = "valve_icon.png"
-POSITIONS_FILE = "valve_positions.json"
+# --- FILE SETUP ---
+DATA_FILE = "valves.json"
+BACKGROUND_IMAGE = "pid_diagram.png"  # Replace with your actual P&ID image name
 
-st.set_page_config(page_title="Interactive P&ID", layout="wide")
-
-# ------------------------------------------------------------------
-# LOAD IMAGES
-# ------------------------------------------------------------------
-@st.cache_data
-def load_images():
-    return Image.open(PID_IMAGE), Image.open(VALVE_ICON)
-
-pid_img, valve_img = load_images()
-
-# ------------------------------------------------------------------
-# LOAD OR INIT STATE
-# ------------------------------------------------------------------
-if os.path.exists(POSITIONS_FILE):
-    with open(POSITIONS_FILE, "r") as f:
-        data = json.load(f)
+# --- LOAD / INIT STATE ---
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "r") as f:
+        valves = json.load(f)
 else:
-    data = {}
+    valves = {
+        "valve_1": {"x": 100, "y": 120, "state": "Closed"},
+        "valve_2": {"x": 220, "y": 150, "state": "Closed"},
+        "valve_3": {"x": 300, "y": 200, "state": "Closed"},
+        "valve_4": {"x": 400, "y": 250, "state": "Closed"},
+        "valve_5": {"x": 500, "y": 300, "state": "Closed"},
+        "valve_6": {"x": 600, "y": 350, "state": "Closed"},
+        "valve_7": {"x": 700, "y": 400, "state": "Closed"},
+        "valve_8": {"x": 800, "y": 450, "state": "Closed"},
+    }
 
-# Default valve list
-valve_tags = [
-    "V-101", "V-102", "V-103", "V-104", "V-105", "V-106",
-    "V-201", "V-202", "V-203", "V-204", "V-205",
-    "V-301", "V-302", "V-303", "V-304", "V-305"
-]
+# --- FUNCTIONS ---
+def save_positions():
+    with open(DATA_FILE, "w") as f:
+        json.dump(valves, f, indent=4)
 
-default_positions = {tag: [100 + 80*i, 300 + 40*(i//6)] for i, tag in enumerate(valve_tags)}
+def toggle_valve(key):
+    valves[key]["state"] = "Open" if valves[key]["state"] == "Closed" else "Closed"
+    save_positions()
 
-positions = data.get("positions", default_positions)
-states = data.get("states", {tag: False for tag in valve_tags})
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="P&ID Valve Layout", layout="wide")
+st.title("🧭 P&ID Valve Layout Editor")
 
-# ------------------------------------------------------------------
-# SAVE STATE
-# ------------------------------------------------------------------
-def save_state():
-    with open(POSITIONS_FILE, "w") as f:
-        json.dump({"positions": positions, "states": states}, f, indent=2)
+# --- SIDEBAR ---
+st.sidebar.header("Valve Settings")
+selected_valve = st.sidebar.selectbox("Select a valve to move:", list(valves.keys()))
+x = st.sidebar.number_input("X position", value=valves[selected_valve]["x"])
+y = st.sidebar.number_input("Y position", value=valves[selected_valve]["y"])
+if st.sidebar.button("Update Position"):
+    valves[selected_valve]["x"] = x
+    valves[selected_valve]["y"] = y
+    save_positions()
+    st.sidebar.success("Position updated and saved!")
 
-# ------------------------------------------------------------------
-# HEADER
-# ------------------------------------------------------------------
-st.markdown("<h2 style='text-align:center;color:#00BFFF;'>🧭 Interactive P&ID Dashboard</h2>", unsafe_allow_html=True)
-st.info("Use the sidebar to toggle valve states. Positions are saved automatically.")
+# --- MAIN AREA ---
+st.markdown(
+    f"""
+    <div style='position: relative; display: inline-block;'>
+        <img src='{BACKGROUND_IMAGE}' style='width: 100%; height: auto;'>
+    """,
+    unsafe_allow_html=True
+)
 
-# ------------------------------------------------------------------
-# SIDEBAR CONTROLS
-# ------------------------------------------------------------------
-st.sidebar.header("Valve Controls")
-for tag in valve_tags:
-    new_state = st.sidebar.toggle(f"{tag} Open", value=states.get(tag, False))
-    if new_state != states.get(tag, False):
-        states[tag] = new_state
-        save_state()
-        st.rerun()
+# --- DRAW VALVES ON TOP OF IMAGE ---
+for key, v in valves.items():
+    button_html = f"""
+        <button 
+            style="
+                position: absolute;
+                left: {v['x']}px;
+                top: {v['y']}px;
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                border: none;
+                cursor: pointer;
+                background-color: {'green' if v['state'] == 'Open' else 'red'};
+                color: white;
+                font-size: 10px;
+            "
+            onclick="fetch('/?toggle={key}', {{method:'POST'}})">
+            {key.split('_')[-1]}
+        </button>
+    """
+    st.markdown(button_html, unsafe_allow_html=True)
 
-# ------------------------------------------------------------------
-# MAIN DISPLAY (Overlay simulation)
-# ------------------------------------------------------------------
-st.image(pid_img, use_container_width=True)
-st.markdown("### 💡 Valve State Summary")
-
-cols = st.columns(4)
-for i, tag in enumerate(valve_tags):
-    with cols[i % 4]:
-        color = "green" if states.get(tag, False) else "red"
-        st.markdown(
-            f"""
-            <div style="border:1px solid #555;border-radius:8px;padding:6px;margin:4px;text-align:center;">
-                <b style='color:white'>{tag}</b><br>
-                <span style='color:{color};font-weight:bold;'>{'OPEN' if states[tag] else 'CLOSED'}</span>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-# ------------------------------------------------------------------
-# SAVE ON EXIT
-# ------------------------------------------------------------------
-save_state()
-st.success("✅ Valve states saved to 'valve_positions.json'")
+st.markdown("</div>", unsafe_allow_html=True)
