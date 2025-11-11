@@ -1,8 +1,32 @@
 {
-    "valve_1": {"x": 100, "y": 120, "state": "Closed"},
-    "valve_2": {"x": 220, "y": 150, "state": "Closed"},
-    "valve_3": {"x": 300, "y": 200, "state": "Closed"},
-    "valve_4": {"x": 400, "y": 250, "state": "Closed"},
-    "valve_5": {"x": 500, "y": 300, "state": "Closed"},
-    "valve_6": {"x": 600, "y": 350, "state": "Closed"}
+  "v-101": {
+    "x": 100,
+    "y": 120,
+    "state": "Closed"
+  },
+  "v-102": {
+    "x": 220,
+    "y": 150,
+    "state": "Closed"
+  },
+  "v-103": {
+    "x": 300,
+    "y": 200,
+    "state": "Closed"
+  },
+  "v-104": {
+    "x": 400,
+    "y": 250,
+    "state": "Closed"
+  },
+  "v-105": {
+    "x": 500,
+    "y": 300,
+    "state": "Closed"
+  },
+  "v-501": {
+    "x": 600,
+    "y": 350,
+    "state": "Closed"
+  }
 }
