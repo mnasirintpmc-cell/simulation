@@ -15,11 +15,13 @@ def load_valves():
             return json.load(f)
     return {}
 
-def create_pid_with_valves():
-    """Create P&ID image with valve indicators"""
+def create_pid_with_valves_and_buttons():
+    """Create P&ID image with valve indicators and button positions"""
     try:
         pid_img = Image.open(PID_FILE).convert("RGBA")
         draw = ImageDraw.Draw(pid_img)
+        
+        button_positions = {}
         
         for tag, data in valves.items():
             x, y = data["x"], data["y"]
@@ -32,13 +34,16 @@ def create_pid_with_valves():
             draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
             draw.text((x+12, y-10), tag, fill="white", stroke_fill="black", stroke_width=1)
             
-        return pid_img.convert("RGB")
+            # Store button position (shifted above the valve)
+            button_positions[tag] = (x, y - 40)
+            
+        return pid_img.convert("RGB"), button_positions
     except Exception as e:
         st.error(f"Error creating P&ID image: {e}")
         try:
-            return Image.open(PID_FILE).convert("RGB")
+            return Image.open(PID_FILE).convert("RGB"), {}
         except:
-            return Image.new("RGB", (800, 600), (255, 255, 255))
+            return Image.new("RGB", (800, 600), (255, 255, 255)), {}
 
 # Load valve data
 valves = load_valves()
@@ -50,77 +55,86 @@ if "valve_states" not in st.session_state:
 # Main app
 st.title("P&ID Interactive Simulation")
 
-if valves:
-    # Create CSS for absolute positioning of toggle buttons
-    css_styles = ""
-    for tag, data in valves.items():
-        x, y = data["x"], data["y"]
-        # Position buttons 70px above the valve indicators
-        button_y = y - 70
-        css_styles += f"""
-        div[data-testid="column"]:has(button[key="{tag}"]) {{
-            position: absolute !important;
-            left: {x}px !important;
-            top: {button_y}px !important;
-            transform: translateX(-50%) !important;
-            z-index: 1000 !important;
-            width: auto !important;
-        }}
-        """
-    
-    st.markdown(f"""
-    <style>
-    .stApp {{
-        position: relative;
-    }}
-    {css_styles}
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Display the P&ID with valve indicators
-    composite_img = create_pid_with_valves()
-    st.image(composite_img, use_column_width=True, caption="Interactive P&ID - Click buttons above valves to toggle")
-    
-    # Create toggle buttons at shifted positions
-    for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        button_text = f"🔴 {tag} (OPEN)" if current_state else f"🟢 {tag} (CLOSED)"
-        
-        # Create columns to hold the buttons (positioned via CSS)
-        col = st.columns(1)[0]
-        with col:
-            if st.button(button_text, key=tag, use_container_width=True):
-                st.session_state.valve_states[tag] = not current_state
-                st.rerun()
+if not valves:
+    st.error("No valves found in valves.json. Please check your configuration.")
+    st.stop()
 
-else:
-    st.error("No valves found in valves.json")
+# Create the P&ID with valve indicators
+composite_img, button_positions = create_pid_with_valves_and_buttons()
 
-# Show current status
+# Display the P&ID
+st.image(composite_img, use_container_width=True, caption="Interactive P&ID")
+
+# Create valve controls in a grid below the image
 st.markdown("---")
-st.markdown("### Current Valve Status:")
-if valves:
-    cols = st.columns(3)
-    for i, (tag, data) in enumerate(valves.items()):
-        col_idx = i % 3
-        with cols[col_idx]:
-            current_state = st.session_state.valve_states[tag]
-            status = "🟢 OPEN" if current_state else "🔴 CLOSED"
-            st.write(f"**{tag}**: {status}")
-            st.write(f"Position: ({data['x']}, {data['y']})")
+st.markdown("### Valve Controls")
+
+# Create columns for the valve buttons
+num_columns = min(4, len(valves))
+columns = st.columns(num_columns)
+
+# Display toggle buttons in a grid
+for i, (tag, data) in enumerate(valves.items()):
+    col_idx = i % num_columns
+    with columns[col_idx]:
+        current_state = st.session_state.valve_states[tag]
+        
+        # Create colored button based on state
+        if current_state:
+            button_label = f"🔴 {tag} - OPEN"
+            button_type = "primary"
+        else:
+            button_label = f"🟢 {tag} - CLOSED" 
+            button_type = "secondary"
+        
+        if st.button(button_label, key=f"btn_{tag}", use_container_width=True, type=button_type):
+            st.session_state.valve_states[tag] = not current_state
+            st.rerun()
+        
+        # Show position info
+        st.caption(f"Position: ({data['x']}, {data['y']})")
+
+# Current status display
+st.markdown("---")
+st.markdown("### Current Valve Status")
+
+# Create a nice status table
+status_data = []
+for tag, data in valves.items():
+    current_state = st.session_state.valve_states[tag]
+    status_data.append({
+        "Valve": tag,
+        "Status": "🟢 OPEN" if current_state else "🔴 CLOSED",
+        "Position": f"({data['x']}, {data['y']})"
+    })
+
+# Display as columns for better layout
+if status_data:
+    num_cols = min(3, len(status_data))
+    status_cols = st.columns(num_cols)
+    
+    for i, status in enumerate(status_data):
+        col_idx = i % num_cols
+        with status_cols[col_idx]:
+            st.metric(
+                label=status["Valve"],
+                value=status["Status"],
+                delta=status["Position"]
+            )
 
 # Instructions
 st.markdown("---")
-st.markdown("### Instructions:")
+st.markdown("### Instructions")
 st.markdown("""
-- **Green circle** = Valve is OPEN
-- **Red circle** = Valve is CLOSED  
-- Click the toggle buttons **above each valve** to change its state
-- Valve positions are fixed from your JSON file
-- Changes are temporary (not saved to JSON file)
+- **Green circles** on the P&ID indicate OPEN valves
+- **Red circles** on the P&ID indicate CLOSED valves
+- Click the buttons above to toggle valve states
+- Valve positions are fixed from your JSON configuration
+- All changes are temporary (not saved to file)
 """)
 
-# Debug info
-with st.expander("Debug Information"):
-    st.write("Valves data:", valves)
-    st.write("Current states:", st.session_state.valve_states)
+# Debug information
+with st.expander("🔧 Configuration Details"):
+    st.write("**Loaded Valves:**", valves)
+    st.write("**Current States:**", st.session_state.valve_states)
+    st.write("**Button Positions:**", button_positions)
