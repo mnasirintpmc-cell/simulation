@@ -21,34 +21,38 @@ def create_pid_with_flow():
         pid_img = Image.open(PID_FILE).convert("RGBA")
         draw = ImageDraw.Draw(pid_img)
         
-        # Define pipe segments - UPDATE THESE COORDINATES TO MATCH YOUR P&ID
-        # You'll need to trace the actual pipe paths from your P&ID
+        # =====================================================
+        # UPDATE THIS SECTION WITH YOUR ACTUAL PIPE COORDINATES
+        # =====================================================
         pipe_segments = {
-            "supply_line": {
-                "coords": [(50, 100, 150, 100)],  # From supply to V-101
-                "connected_valves": ["V-101"],
-                "requires": ["V-101"]  # Only flows if V-101 is open
+            # Section 1: V-101 to V-301
+            "section_1": {
+                "coords": [
+                    (100, 200, 200, 200),  # Horizontal pipe from V-101 to midpoint
+                    (200, 200, 200, 300)   # Vertical pipe down to V-301
+                ],
+                "flow_logic": ["V-101"]  # Only needs V-101 open to be active
             },
-            "main_line_1": {
-                "coords": [(150, 100, 250, 100), (250, 100, 250, 150)],  # V-101 to V-102
-                "connected_valves": ["V-101", "V-102"],
-                "requires": ["V-101", "V-102"]  # Both valves must be open
+            # Section 2: V-301 to V-105
+            "section_2": {
+                "coords": [
+                    (200, 300, 300, 300),  # Horizontal pipe from V-301 to V-105
+                ],
+                "flow_logic": ["V-101", "V-301"]  # Needs both V-101 AND V-301 open
             },
-            "main_line_2": {
-                "coords": [(250, 150, 350, 150), (350, 150, 350, 200)],  # V-102 to V-103
-                "connected_valves": ["V-102", "V-103"],
-                "requires": ["V-101", "V-102", "V-103"]  # All valves in path must be open
+            # Section 3: V-105 to destination
+            "section_3": {
+                "coords": [
+                    (300, 300, 400, 300),  # Horizontal pipe from V-105 onward
+                ],
+                "flow_logic": ["V-101", "V-301", "V-105"]  # Needs all three valves open
             },
-            "branch_line": {
-                "coords": [(250, 100, 250, 50), (250, 50, 350, 50)],  # Branch from main line
-                "connected_valves": ["V-104"],
-                "requires": ["V-101", "V-104"]  # Supply + branch valve
-            }
+            # Add more sections as needed...
         }
         
-        # Calculate flow for each pipe segment
+        # Calculate flow for each pipe segment based on your logic
         for pipe_id, pipe_data in pipe_segments.items():
-            required_valves = pipe_data["requires"]
+            required_valves = pipe_data["flow_logic"]
             has_flow = True
             
             # Check if ALL required valves are open
@@ -83,7 +87,9 @@ def create_pid_with_flow():
             draw.ellipse([x-12, y-12, x+12, y+12], fill=valve_color, outline="white", width=3)
             
             # Draw valve tag with background for readability
-            draw.rectangle([x+15, y-15, x+80, y+5], fill=(0, 0, 0, 200))
+            bbox = draw.textbbox((x+15, y-12), tag)
+            text_width = bbox[2] - bbox[0] + 10
+            draw.rectangle([x+15, y-15, x+15+text_width, y+3], fill=(0, 0, 0, 200))
             draw.text((x+18, y-12), tag, fill="white")
             
         return pid_img.convert("RGB")
@@ -138,26 +144,17 @@ with st.sidebar:
     st.markdown("---")
     
     # Flow status summary
-    st.subheader("🌊 Flow Status")
+    st.subheader("🌊 Flow Analysis")
     
-    # Check if supply is open
-    supply_open = st.session_state.valve_states.get("V-101", False)
+    # Check flow in each section based on your logic
+    section_1_flow = st.session_state.valve_states.get("V-101", False)
+    section_2_flow = section_1_flow and st.session_state.valve_states.get("V-301", False)
+    section_3_flow = section_2_flow and st.session_state.valve_states.get("V-105", False)
     
-    if supply_open:
-        # Count how many paths have flow
-        active_paths = 0
-        if st.session_state.valve_states.get("V-102", False):
-            active_paths += 1
-        if st.session_state.valve_states.get("V-103", False):
-            active_paths += 1
-        if st.session_state.valve_states.get("V-104", False):
-            active_paths += 1
-            
-        st.success(f"✅ Supply Active")
-        st.metric("Active Paths", active_paths)
-    else:
-        st.error("❌ Supply Blocked")
-        st.metric("Active Paths", 0)
+    st.write("**Section Flow:**")
+    st.write(f"{'✅' if section_1_flow else '❌'} Section 1 (V-101 to V-301)")
+    st.write(f"{'✅' if section_2_flow else '❌'} Section 2 (V-301 to V-105)")
+    st.write(f"{'✅' if section_3_flow else '❌'} Section 3 (V-105 onward)")
     
     st.markdown("---")
     
@@ -182,74 +179,79 @@ with col1:
     # Create and display the P&ID with flow animation
     composite_img = create_pid_with_flow()
     
-    # Display flow status
-    supply_state = st.session_state.valve_states.get("V-101", False)
-    if supply_state:
-        st.success("🌊 **System Status:** SUPPLY ACTIVE - Flow available")
+    # Display current flow state
+    st.subheader("🌊 Current Flow State")
+    
+    if st.session_state.valve_states.get("V-101", False):
+        st.success("✅ **Supply Active** - V-101 is OPEN")
+        if st.session_state.valve_states.get("V-301", False):
+            st.success("✅ **Section 1-2 Active** - Flow reaching V-105")
+            if st.session_state.valve_states.get("V-105", False):
+                st.success("✅ **Full Flow** - All sections active")
+            else:
+                st.warning("⚠️ **Flow Stopped** - V-105 is CLOSED")
+        else:
+            st.warning("⚠️ **Flow Limited** - V-301 is CLOSED, flow stops at Section 1")
     else:
-        st.error("💧 **System Status:** SUPPLY BLOCKED - No flow possible")
+        st.error("❌ **No Supply** - V-101 is CLOSED, no flow anywhere")
     
     # Display the P&ID
-    st.image(composite_img, use_container_width=True, caption="Interactive P&ID - Flow depends on V-101 (Supply Valve)")
+    st.image(composite_img, use_container_width=True, caption="Interactive P&ID - Flow follows your specific logic")
 
 with col2:
-    # Right sidebar for detailed status
-    st.header("🔍 Flow Analysis")
+    # Right sidebar for system info
+    st.header("🔧 System Info")
     st.markdown("---")
     
-    # Flow path analysis
-    st.subheader("Flow Paths")
+    st.subheader("Flow Logic")
+    st.markdown("""
+    **Your Current Logic:**
+    - Section 1: V-101 only
+    - Section 2: V-101 + V-301  
+    - Section 3: V-101 + V-301 + V-105
+    """)
     
-    supply_open = st.session_state.valve_states.get("V-101", False)
-    
-    if supply_open:
-        st.write("**Available Paths:**")
-        
-        if st.session_state.valve_states.get("V-102", False):
-            if st.session_state.valve_states.get("V-103", False):
-                st.success("✅ Main Line: V-101 → V-102 → V-103")
-            else:
-                st.warning("⚠️ Main Line: V-101 → V-102 (stopped at V-103)")
-        else:
-            st.error("❌ Main Line: Blocked at V-102")
-            
-        if st.session_state.valve_states.get("V-104", False):
-            st.success("✅ Branch Line: V-101 → V-104")
-        else:
-            st.error("❌ Branch Line: Blocked at V-104")
-    else:
-        st.error("❌ All paths blocked - V-101 (Supply) is closed")
+    st.markdown("---")
+    st.subheader("Need Help?")
+    st.markdown("""
+    To make this work:
+    1. Update pipe coordinates in code
+    2. Adjust flow_logic for each section
+    3. Add more sections as needed
+    """)
 
-# Instructions with specific scenarios
+# Configuration section for updating pipe coordinates
 st.markdown("---")
-st.markdown("### 🎯 Test Scenarios")
+st.markdown("### 🔧 Pipe Configuration Helper")
 
-scenario_col1, scenario_col2, scenario_col3 = st.columns(3)
+with st.expander("Click here to see your current valve positions and help configure pipes"):
+    st.write("**Your Current Valve Positions from JSON:**")
+    for tag, data in valves.items():
+        st.write(f"- {tag}: Position ({data['x']}, {data['y']})")
+    
+    st.markdown("---")
+    st.markdown("**To configure pipes, I need:**")
+    st.markdown("1. **Pipe coordinates** for each section")
+    st.markdown("2. **Flow logic** for each section (which valves control flow)")
+    st.markdown("3. **Valve connections** (which valves connect to which pipes)")
+    
+    st.markdown("**Example format:**")
+    st.code("""
+    pipe_segments = {
+        "section_1": {
+            "coords": [(x1,y1,x2,y2), (x2,y2,x3,y3)],  # Pipe line coordinates
+            "flow_logic": ["V-101"]  # Valves needed for flow
+        },
+        "section_2": {
+            "coords": [(x3,y3,x4,y4)],
+            "flow_logic": ["V-101", "V-301"]
+        }
+    }
+    """)
 
-with scenario_col1:
-    st.markdown("**Scenario 1: Full Flow**")
-    st.markdown("- Open: V-101, V-102, V-103, V-104")
-    st.markdown("- Result: All pipes blue")
-    if st.button("Apply Scenario 1", key="scenario1"):
-        for tag in valves:
-            st.session_state.valve_states[tag] = True
-        st.rerun()
+# Tell me your actual flow scenarios!
+st.markdown("---")
+st.markdown("### 📝 Please Provide Your Flow Scenarios")
 
-with scenario_col2:
-    st.markdown("**Scenario 2: Supply Only**")
-    st.markdown("- Open: V-101 only")
-    st.markdown("- Close: V-102, V-103, V-104")
-    st.markdown("- Result: Only supply pipe blue")
-    if st.button("Apply Scenario 2", key="scenario2"):
-        for tag in valves:
-            st.session_state.valve_states[tag] = (tag == "V-101")
-        st.rerun()
-
-with scenario_col3:
-    st.markdown("**Scenario 3: No Flow**")
-    st.markdown("- Close: All valves")
-    st.markdown("- Result: All pipes gray")
-    if st.button("Apply Scenario 3", key="scenario3"):
-        for tag in valves:
-            st.session_state.valve_states[tag] = False
-        st.rerun()
+st.markdown("""
+**Copy-paste this template and fill in your actual flow logic:**
