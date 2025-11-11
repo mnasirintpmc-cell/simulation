@@ -49,7 +49,7 @@ def create_pid_with_valves():
                 status_text = "CLOSED"
             
             # Draw valve marker
-            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
+            draw.ellipse([x-8, y-8, x+8, x+8], fill=color, outline="white", width=2)
             
             # Draw tag and status
             draw.text((x+12, y-20), tag, fill="white", stroke_fill="black", stroke_width=1)
@@ -98,14 +98,48 @@ st.markdown("### P&ID with Valves")
 composite_img = create_pid_with_valves()
 st.image(composite_img, use_column_width=True, caption="Interactive P&ID with Valve Status")
 
-# Interactive valve controls
+# Interactive valve controls ON THE P&ID
 st.markdown("---")
-st.markdown("### Valve Controls")
+st.markdown("### Quick Valve Controls")
 
 if st.session_state.valves:
-    # Create columns for valve controls
+    # Create a grid of toggle buttons - 4 columns
+    valve_list = list(st.session_state.valves.items())
+    
+    # Calculate how many rows we need
+    num_columns = 4
+    num_valves = len(valve_list)
+    num_rows = (num_valves + num_columns - 1) // num_columns
+    
+    # Create toggle buttons in a grid
+    for row in range(num_rows):
+        cols = st.columns(num_columns)
+        for col_idx in range(num_columns):
+            valve_index = row * num_columns + col_idx
+            if valve_index < num_valves:
+                tag, data = valve_list[valve_index]
+                with cols[col_idx]:
+                    status = "OPEN" if data["state"] else "CLOSED"
+                    button_text = f"🔴 Close {tag}" if data["state"] else f"🟢 Open {tag}"
+                    
+                    if st.button(button_text, key=f"quick_toggle_{tag}", use_container_width=True):
+                        st.session_state.valves[tag]["state"] = not st.session_state.valves[tag]["state"]
+                        save_valves(st.session_state.valves)
+                        st.rerun()
+                    
+                    # Show current position
+                    st.caption(f"Position: ({data['x']}, {data['y']})")
+else:
+    st.info("No valves configured. Use the section below to add valves.")
+
+# Individual valve control cards
+if st.session_state.valves:
+    st.markdown("---")
+    st.markdown("### Individual Valve Control Panels")
+    
+    # Create columns for valve cards
     num_valves = len(st.session_state.valves)
-    num_columns = min(4, num_valves)
+    num_columns = min(3, num_valves)  # Max 3 columns for better layout
     
     if num_columns > 0:
         valve_columns = st.columns(num_columns)
@@ -113,20 +147,39 @@ if st.session_state.valves:
         for i, (tag, data) in enumerate(st.session_state.valves.items()):
             col_idx = i % num_columns
             with valve_columns[col_idx]:
-                status = "OPEN" if data["state"] else "CLOSED"
-                emoji = "🟢" if data["state"] else "🔴"
-                
-                st.write(f"**{tag}**")
-                st.write(f"Status: {emoji} {status}")
-                st.write(f"Position: ({data['x']}, {data['y']})")
-                
-                # Toggle button
-                if st.button(f"Toggle {tag}", key=f"toggle_{tag}"):
-                    st.session_state.valves[tag]["state"] = not st.session_state.valves[tag]["state"]
-                    save_valves(st.session_state.valves)
-                    st.rerun()
-else:
-    st.info("No valves configured. Use the section below to add valves.")
+                # Create a card-like container
+                with st.container():
+                    status = "OPEN" if data["state"] else "CLOSED"
+                    emoji = "🟢" if data["state"] else "🔴"
+                    button_color = "secondary" if data["state"] else "primary"
+                    
+                    st.markdown(f"#### {tag}")
+                    st.markdown(f"**Status:** {emoji} {status}")
+                    st.markdown(f"**Position:** ({data['x']}, {data['y']})")
+                    
+                    # Toggle button with different styles
+                    col_on, col_off = st.columns(2)
+                    with col_on:
+                        if st.button(f"🟢 Open", key=f"open_{tag}", use_container_width=True, 
+                                   disabled=data["state"]):
+                            st.session_state.valves[tag]["state"] = True
+                            save_valves(st.session_state.valves)
+                            st.rerun()
+                    
+                    with col_off:
+                        if st.button(f"🔴 Close", key=f"close_{tag}", use_container_width=True,
+                                   disabled=not data["state"]):
+                            st.session_state.valves[tag]["state"] = False
+                            save_valves(st.session_state.valves)
+                            st.rerun()
+                    
+                    # Single toggle button alternative
+                    if st.button(f"🔄 Toggle {tag}", key=f"toggle_{tag}", use_container_width=True):
+                        st.session_state.valves[tag]["state"] = not st.session_state.valves[tag]["state"]
+                        save_valves(st.session_state.valves)
+                        st.rerun()
+                    
+                    st.markdown("---")
 
 # Valve management section (only show when unlocked)
 if not st.session_state.positions_locked:
@@ -199,7 +252,17 @@ st.markdown("---")
 st.markdown("### Current Configuration")
 
 if st.session_state.valves:
-    st.json(st.session_state.valves)
+    # Summary table
+    st.subheader("Valve Status Summary")
+    summary_data = []
+    for tag, data in st.session_state.valves.items():
+        summary_data.append({
+            "Valve Tag": tag,
+            "Status": "OPEN" if data["state"] else "CLOSED",
+            "Position": f"({data['x']}, {data['y']})"
+        })
+    
+    st.table(summary_data)
     
     # Export configuration as file
     config_str = json.dumps(st.session_state.valves, indent=2)
@@ -215,19 +278,18 @@ else:
 # Instructions
 with st.expander("📋 How to Use"):
     st.markdown("""
+    **Valve Control Options:**
+    
+    1. **Quick Toggle Grid**: Use the grid of colored buttons for fast operation
+    2. **Individual Control Panels**: Each valve has its own control card with Open/Close buttons
+    3. **Visual Feedback**: Valves show as 🟢 Green (OPEN) or 🔴 Red (CLOSED) on the P&ID
+    
     **Setup Phase (Positions Unlocked):**
-    1. Add valves using the tag names from your P&ID (e.g., V-101, V-201)
-    2. Adjust X,Y positions to place valves accurately on the P&ID
-    3. Set initial states (Open/Closed)
-    4. Click **🔒 Lock Valve Positions** when done
+    - Add and position valves using the management section
+    - Lock positions when ready for simulation
     
     **Simulation Phase (Positions Locked):**
-    1. Use toggle buttons to open/close valves
-    2. Watch the P&ID update in real-time
-    3. Valve positions are fixed - focus on process simulation
-    
-    **Data Management:**
-    - Configuration is automatically saved to `valves.json`
-    - Use **💾 Export Configuration** to force save
-    - Download backup configuration file for safekeeping
+    - Use any of the toggle buttons to control valves
+    - Watch the P&ID update in real-time
+    - All changes are automatically saved
     """)
