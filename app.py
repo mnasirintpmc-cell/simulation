@@ -1,15 +1,23 @@
 import streamlit as st
 from PIL import Image
+from streamlit_drag_and_drop import drag_and_drop
 import json
-import base64
 import os
 
-# --- File Paths ---
-PID_IMAGE = "P&ID.png"
-VALVE_ICON = "valve_icon.png"
+# ------------------------------------------------------------
+# CONFIGURATION
+# ------------------------------------------------------------
+
+PID_IMAGE = "P&ID.png"          # background image
+VALVE_ICON = "valve_icon.png"   # valve symbol
 POSITIONS_FILE = "valve_positions.json"
 
-# --- Load images ---
+st.set_page_config(page_title="P&ID Simulation", layout="wide")
+
+# ------------------------------------------------------------
+# IMAGE LOADING
+# ------------------------------------------------------------
+
 @st.cache_data
 def load_images():
     pid_img = Image.open(PID_IMAGE)
@@ -18,77 +26,122 @@ def load_images():
 
 pid_img, valve_img = load_images()
 
-# --- Load saved positions & states ---
+# ------------------------------------------------------------
+# LOAD OR INITIALIZE POSITIONS / STATES
+# ------------------------------------------------------------
+
 if os.path.exists(POSITIONS_FILE):
     with open(POSITIONS_FILE, "r") as f:
         data = json.load(f)
-        positions = data.get("positions", {})
-        states = data.get("states", {})
 else:
-    positions = {
-        "V-101": [150, 400],
-        "V-102": [300, 420],
-        "V-103": [500, 440],
-        "V-301": [700, 460],
-        "V-302": [900, 480],
-    }
-    states = {tag: False for tag in positions}
+    data = {}
 
-st.session_state.positions = positions
-st.session_state.states = states
+# Default valve coordinates (approximate)
+default_positions = {
+    "V-101": [150, 400],
+    "V-102": [280, 410],
+    "V-103": [420, 390],
+    "V-104": [560, 400],
+    "V-105": [710, 430],
+    "V-106": [870, 460],
+    "V-201": [160, 520],
+    "V-202": [300, 530],
+    "V-203": [450, 540],
+    "V-204": [610, 550],
+    "V-205": [770, 560],
+    "V-301": [200, 670],
+    "V-302": [350, 680],
+    "V-303": [500, 690],
+    "V-304": [650, 700],
+    "V-305": [800, 710],
+}
 
+positions = data.get("positions", default_positions)
+states = data.get("states", {tag: False for tag in positions.keys()})
 
-# --- Save positions & states ---
+# ------------------------------------------------------------
+# SAVE STATE HELPER
+# ------------------------------------------------------------
+
 def save_state():
-    data = {
-        "positions": st.session_state.positions,
-        "states": st.session_state.states
-    }
     with open(POSITIONS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump({"positions": positions, "states": states}, f, indent=2)
 
+# ------------------------------------------------------------
+# PAGE HEADER
+# ------------------------------------------------------------
 
-# --- Helper to encode image for HTML display ---
-def get_base64(image):
-    from io import BytesIO
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
+st.markdown(
+    "<h2 style='text-align:center; color:#00BFFF;'>🧭 Interactive P&ID Simulation</h2>",
+    unsafe_allow_html=True
+)
 
+st.info(
+    "💡 Drag the valves to position them on your P&ID. "
+    "Use the sidebar toggles to open/close each valve. "
+    "All positions and states are automatically saved."
+)
 
-pid_b64 = get_base64(pid_img)
-valve_b64 = get_base64(valve_img)
+# ------------------------------------------------------------
+# BASE IMAGE DISPLAY
+# ------------------------------------------------------------
 
-# --- Build HTML for overlay ---
-html = f"""
-<div style='position: relative; display: inline-block;'>
-    <img src='data:image/png;base64,{pid_b64}' style='width:100%; height:auto;'/>
-"""
+st.image(PID_IMAGE, use_container_width=True)
+st.divider()
 
-for tag, (x, y) in st.session_state.positions.items():
-    state = st.session_state.states.get(tag, False)
+# ------------------------------------------------------------
+# DRAGGABLE VALVES
+# ------------------------------------------------------------
+
+st.subheader("🧩 Drag and drop valves on the P&ID")
+
+new_positions = {}
+
+for tag, (x, y) in positions.items():
+    state = states.get(tag, False)
     color = "green" if state else "red"
-    html += f"""
-    <div style='position: absolute; left:{x}px; top:{y}px; text-align:center;'>
-        <img src="data:image/png;base64,{valve_b64}" width="30" 
-             style="filter: drop-shadow(0 0 8px {color});"/>
-        <div style="color:white; font-weight:bold;">{tag}</div>
-    </div>
+
+    # Build small HTML valve icon with tag label
+    content = f"""
+        <div style='text-align:center;'>
+            <img src="{VALVE_ICON}" width="40"
+                 style="filter: drop-shadow(0 0 6px {color});"/>
+            <br><strong style='color:white; font-size:12px;'>{tag}</strong>
+        </div>
     """
 
-html += "</div>"
+    result = drag_and_drop(
+        key=tag,
+        draggable=True,
+        initial_position={"x": x, "y": y},
+        content=content,
+    )
 
-# --- Streamlit UI ---
-st.markdown("<h3 style='text-align:center;'>🧭 P&ID Simulation Control Panel</h3>", unsafe_allow_html=True)
-st.components.v1.html(html, height=800, scrolling=True)
+    new_positions[tag] = [result["x"], result["y"]]
 
-# --- Sidebar controls ---
+# Save if valve moved
+if new_positions != positions:
+    positions = new_positions
+    save_state()
+
+# ------------------------------------------------------------
+# SIDEBAR CONTROLS
+# ------------------------------------------------------------
+
 st.sidebar.header("Valve Controls")
-for tag in st.session_state.positions.keys():
-    new_state = st.sidebar.toggle(f"{tag} Open", value=st.session_state.states[tag])
-    if new_state != st.session_state.states[tag]:
-        st.session_state.states[tag] = new_state
-        save_state()
 
-# Save once at the end of run
+for tag in sorted(positions.keys()):
+    new_state = st.sidebar.toggle(f"{tag} Open", value=states.get(tag, False))
+    if new_state != states.get(tag, False):
+        states[tag] = new_state
+        save_state()
+        st.rerun()
+
+# ------------------------------------------------------------
+# SAVE ON EXIT
+# ------------------------------------------------------------
+
 save_state()
+
+st.success("✅ All valve positions and states saved successfully.")
+st.caption("Positions saved in 'valve_positions.json'")
