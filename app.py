@@ -22,9 +22,13 @@ else:
         "valve_6": {"x": 600, "y": 350, "state": False},
     }
 
+# Initialize session state
+if "valves" not in st.session_state:
+    st.session_state.valves = valves
+
 def save_valves():
     with open(DATA_FILE, "w") as f:
-        json.dump(valves, f, indent=4)
+        json.dump(st.session_state.valves, f, indent=4)
 
 # Load images
 pid_img = Image.open(PID_FILE)
@@ -34,22 +38,19 @@ valve_img = Image.open(VALVE_FILE)
 st.image(pid_img, use_column_width=True)
 
 # Overlay valves
-for name, data in valves.items():
-    col1, col2 = st.columns([data['x'], 1])
-    with col2:
-        color = "🟢" if data["state"] else "🔴"
-        if st.button(f"{color} {name}"):
-            valves[name]["state"] = not valves[name]["state"]
-            save_valves()
-            st.experimental_rerun()
+for name, data in st.session_state.valves.items():
+    color = "🟢" if data["state"] else "🔴"
+    if st.button(f"{color} {name}", key=name):
+        st.session_state.valves[name]["state"] = not st.session_state.valves[name]["state"]
+        save_valves()
 
 # Sidebar to adjust positions
 st.sidebar.header("Adjust valve positions")
-sel = st.sidebar.selectbox("Select valve", list(valves.keys()))
-x = st.sidebar.number_input("X position", value=valves[sel]["x"])
-y = st.sidebar.number_input("Y position", value=valves[sel]["y"])
+sel = st.sidebar.selectbox("Select valve", list(st.session_state.valves.keys()))
+x = st.sidebar.number_input("X position", value=st.session_state.valves[sel]["x"])
+y = st.sidebar.number_input("Y position", value=st.session_state.valves[sel]["y"])
 if st.sidebar.button("💾 Save position"):
-    valves[sel]["x"] = int(x)
-    valves[sel]["y"] = int(y)
+    st.session_state.valves[sel]["x"] = int(x)
+    st.session_state.valves[sel]["y"] = int(y)
     save_valves()
     st.sidebar.success("Saved!")
