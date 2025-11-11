@@ -1,81 +1,105 @@
 import streamlit as st
 import json
 import os
+from PIL import Image
+import base64
+from io import BytesIO
 
-# --- FILE SETUP ---
+# --- FILES ---
+PID_FILE = "P&ID.png"
+VALVE_FILE = "valve_icon.png"
 DATA_FILE = "valves.json"
-BACKGROUND_IMAGE = "pid_diagram.png"  # Replace with your actual P&ID image name
 
-# --- LOAD / INIT STATE ---
+st.set_page_config(page_title="P&ID Valve Simulation", layout="wide")
+
+# --- LOAD OR INIT DATA ---
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
         valves = json.load(f)
 else:
+    # Default valve positions (you can adjust)
     valves = {
-        "valve_1": {"x": 100, "y": 120, "state": "Closed"},
-        "valve_2": {"x": 220, "y": 150, "state": "Closed"},
-        "valve_3": {"x": 300, "y": 200, "state": "Closed"},
-        "valve_4": {"x": 400, "y": 250, "state": "Closed"},
-        "valve_5": {"x": 500, "y": 300, "state": "Closed"},
-        "valve_6": {"x": 600, "y": 350, "state": "Closed"},
-        "valve_7": {"x": 700, "y": 400, "state": "Closed"},
-        "valve_8": {"x": 800, "y": 450, "state": "Closed"},
+        "V-101": {"x": 150, "y": 400, "state": False},
+        "V-102": {"x": 300, "y": 420, "state": False},
+        "V-103": {"x": 500, "y": 440, "state": False},
+        "V-104": {"x": 650, "y": 460, "state": False},
+        "V-105": {"x": 800, "y": 480, "state": False},
+        "V-201": {"x": 950, "y": 500, "state": False},
+        "V-202": {"x": 1100, "y": 520, "state": False},
+        "V-301": {"x": 1250, "y": 540, "state": False},
     }
 
-# --- FUNCTIONS ---
-def save_positions():
+def save_valves():
     with open(DATA_FILE, "w") as f:
         json.dump(valves, f, indent=4)
 
-def toggle_valve(key):
-    valves[key]["state"] = "Open" if valves[key]["state"] == "Closed" else "Closed"
-    save_positions()
+# --- ENCODE IMAGE FOR HTML ---
+def img_to_base64(path):
+    with open(path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
 
-# --- PAGE CONFIG ---
-st.set_page_config(page_title="P&ID Valve Layout", layout="wide")
-st.title("🧭 P&ID Valve Layout Editor")
+pid_b64 = img_to_base64(PID_FILE)
+valve_b64 = img_to_base64(VALVE_FILE)
 
-# --- SIDEBAR ---
-st.sidebar.header("Valve Settings")
-selected_valve = st.sidebar.selectbox("Select a valve to move:", list(valves.keys()))
-x = st.sidebar.number_input("X position", value=valves[selected_valve]["x"])
-y = st.sidebar.number_input("Y position", value=valves[selected_valve]["y"])
-if st.sidebar.button("Update Position"):
-    valves[selected_valve]["x"] = x
-    valves[selected_valve]["y"] = y
-    save_positions()
-    st.sidebar.success("Position updated and saved!")
+# --- PAGE TITLE ---
+st.markdown("<h2 style='text-align:center;'>🧭 P&ID Valve Control Simulation</h2>", unsafe_allow_html=True)
 
-# --- MAIN AREA ---
-st.markdown(
-    f"""
-    <div style='position: relative; display: inline-block;'>
-        <img src='{BACKGROUND_IMAGE}' style='width: 100%; height: auto;'>
-    """,
-    unsafe_allow_html=True
-)
+# --- BUILD HTML ---
+html = f"""
+<div style='
+    position: relative;
+    display: inline-block;
+    margin: auto;
+'>
+    <img src="data:image/png;base64,{pid_b64}" style="width:100%; height:auto; display:block;"/>
+"""
 
-# --- DRAW VALVES ON TOP OF IMAGE ---
-for key, v in valves.items():
-    button_html = f"""
-        <button 
-            style="
-                position: absolute;
-                left: {v['x']}px;
-                top: {v['y']}px;
-                width: 30px;
-                height: 30px;
-                border-radius: 50%;
-                border: none;
-                cursor: pointer;
-                background-color: {'green' if v['state'] == 'Open' else 'red'};
-                color: white;
-                font-size: 10px;
-            "
-            onclick="fetch('/?toggle={key}', {{method:'POST'}})">
-            {key.split('_')[-1]}
-        </button>
+for name, data in valves.items():
+    color = "drop-shadow(0 0 5px green)" if data["state"] else "drop-shadow(0 0 5px red)"
+    html += f"""
+    <div 
+        style="position: absolute; left:{data['x']}px; top:{data['y']}px; cursor:pointer;" 
+        onclick="toggleValve('{name}')"
+    >
+        <img src="data:image/png;base64,{valve_b64}" width="30" style="filter: {color};"/>
+        <div style="color:white; text-align:center; font-weight:bold;">{name}</div>
+    </div>
     """
-    st.markdown(button_html, unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)
+html += """
+</div>
+
+<script>
+function toggleValve(tag) {
+    window.parent.postMessage({type:'toggle', valve: tag}, '*');
+}
+</script>
+"""
+
+# --- DISPLAY ---
+st.components.v1.html(html, height=900, scrolling=True)
+
+# --- TOGGLE HANDLER ---
+if "toggle_valve" not in st.session_state:
+    st.session_state.toggle_valve = None
+
+msg = st.experimental_get_query_params().get("valve", [None])[0]
+if msg and msg in valves:
+    valves[msg]["state"] = not valves[msg]["state"]
+    save_valves()
+    st.experimental_set_query_params()  # clear URL params
+    st.rerun()
+
+# --- SIDEBAR: Position Adjustment ---
+st.sidebar.header("Adjust Valve Positions")
+valve_name = st.sidebar.selectbox("Select valve:", list(valves.keys()))
+x = st.sidebar.number_input("X position (px):", value=valves[valve_name]["x"])
+y = st.sidebar.number_input("Y position (px):", value=valves[valve_name]["y"])
+if st.sidebar.button("💾 Save Position"):
+    valves[valve_name]["x"] = int(x)
+    valves[valve_name]["y"] = int(y)
+    save_valves()
+    st.sidebar.success("Position saved!")
+
+st.sidebar.markdown("---")
+st.sidebar.info("Click valves directly on the diagram to toggle their state.\nAll data is stored in `valves.json`.")
