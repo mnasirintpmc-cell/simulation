@@ -2,7 +2,6 @@ import streamlit as st
 import json
 from PIL import Image, ImageDraw
 import os
-import time
 
 st.set_page_config(layout="wide")
 
@@ -22,38 +21,52 @@ def create_pid_with_flow():
         pid_img = Image.open(PID_FILE).convert("RGBA")
         draw = ImageDraw.Draw(pid_img)
         
-        # Define pipe segments (you'll need to adjust these coordinates based on your P&ID)
-        # Format: {pipe_id: [(x1,y1,x2,y2), ...], connected_valves: [valve1, valve2]}
+        # Define pipe segments - UPDATE THESE COORDINATES TO MATCH YOUR P&ID
+        # You'll need to trace the actual pipe paths from your P&ID
         pipe_segments = {
+            "supply_line": {
+                "coords": [(50, 100, 150, 100)],  # From supply to V-101
+                "connected_valves": ["V-101"],
+                "requires": ["V-101"]  # Only flows if V-101 is open
+            },
             "main_line_1": {
-                "coords": [(50, 100, 200, 100), (200, 100, 200, 150), (200, 150, 300, 150)],
-                "connected_valves": ["V-101", "V-102"]
+                "coords": [(150, 100, 250, 100), (250, 100, 250, 150)],  # V-101 to V-102
+                "connected_valves": ["V-101", "V-102"],
+                "requires": ["V-101", "V-102"]  # Both valves must be open
             },
             "main_line_2": {
-                "coords": [(300, 150, 400, 150), (400, 150, 400, 200), (400, 200, 500, 200)],
-                "connected_valves": ["V-102", "V-103"]
+                "coords": [(250, 150, 350, 150), (350, 150, 350, 200)],  # V-102 to V-103
+                "connected_valves": ["V-102", "V-103"],
+                "requires": ["V-101", "V-102", "V-103"]  # All valves in path must be open
             },
-            "branch_line_1": {
-                "coords": [(200, 100, 200, 50), (200, 50, 300, 50)],
-                "connected_valves": ["V-104"]
+            "branch_line": {
+                "coords": [(250, 100, 250, 50), (250, 50, 350, 50)],  # Branch from main line
+                "connected_valves": ["V-104"],
+                "requires": ["V-101", "V-104"]  # Supply + branch valve
             }
         }
         
         # Calculate flow for each pipe segment
         for pipe_id, pipe_data in pipe_segments.items():
-            connected_valves = pipe_data["connected_valves"]
+            required_valves = pipe_data["requires"]
             has_flow = True
             
-            # Check if all connected valves are open for flow to pass
-            for valve_tag in connected_valves:
+            # Check if ALL required valves are open
+            for valve_tag in required_valves:
                 if valve_tag in st.session_state.valve_states:
                     if not st.session_state.valve_states[valve_tag]:
                         has_flow = False
                         break
+                else:
+                    has_flow = False  # Valve not found
             
             # Draw pipe segment with appropriate color
-            pipe_color = (0, 100, 255, 200) if has_flow else (100, 100, 100, 150)  # Blue for flow, gray for no flow
-            pipe_width = 6 if has_flow else 4
+            if has_flow:
+                pipe_color = (0, 100, 255)  # Bright blue for active flow
+                pipe_width = 8
+            else:
+                pipe_color = (100, 100, 100)  # Gray for no flow
+                pipe_width = 6
             
             for coord in pipe_data["coords"]:
                 draw.line(coord, fill=pipe_color, width=pipe_width)
@@ -64,11 +77,14 @@ def create_pid_with_flow():
             current_state = st.session_state.valve_states[tag]
             
             # Choose color based on valve state
-            valve_color = (0, 255, 0, 255) if current_state else (255, 0, 0, 255)  # Green open, red closed
+            valve_color = (0, 255, 0) if current_state else (255, 0, 0)  # Green open, red closed
             
             # Draw valve indicator
-            draw.ellipse([x-10, y-10, x+10, y+10], fill=valve_color, outline="white", width=3)
-            draw.text((x+12, y-8), tag, fill="white", stroke_fill="black", stroke_width=2)
+            draw.ellipse([x-12, y-12, x+12, y+12], fill=valve_color, outline="white", width=3)
+            
+            # Draw valve tag with background for readability
+            draw.rectangle([x+15, y-15, x+80, y+5], fill=(0, 0, 0, 200))
+            draw.text((x+18, y-12), tag, fill="white")
             
         return pid_img.convert("RGB")
     
@@ -85,10 +101,6 @@ valves = load_valves()
 # Initialize session state for current states
 if "valve_states" not in st.session_state:
     st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
-
-# Initialize animation state
-if "animation_frame" not in st.session_state:
-    st.session_state.animation_frame = 0
 
 # Main app
 st.title("P&ID Interactive Simulation with Flow Animation")
@@ -118,7 +130,6 @@ with st.sidebar:
         with col1:
             if st.button(button_label, key=f"btn_{tag}", use_container_width=True, type=button_type):
                 st.session_state.valve_states[tag] = not current_state
-                st.session_state.animation_frame = (st.session_state.animation_frame + 1) % 10
                 st.rerun()
         with col2:
             status = "🟢" if current_state else "🔴"
@@ -128,18 +139,25 @@ with st.sidebar:
     
     # Flow status summary
     st.subheader("🌊 Flow Status")
-    flowing_pipes = 0
-    total_pipes = 3  # Adjust based on your pipe segments
     
-    # Calculate flow status (simplified)
-    open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
-    if open_valves >= 2:  # Simple logic - adjust based on your P&ID
-        flowing_pipes = 2
-    elif open_valves >= 1:
-        flowing_pipes = 1
+    # Check if supply is open
+    supply_open = st.session_state.valve_states.get("V-101", False)
     
-    st.metric("Flowing Pipes", f"{flowing_pipes}/{total_pipes}")
-    st.progress(flowing_pipes / total_pipes)
+    if supply_open:
+        # Count how many paths have flow
+        active_paths = 0
+        if st.session_state.valve_states.get("V-102", False):
+            active_paths += 1
+        if st.session_state.valve_states.get("V-103", False):
+            active_paths += 1
+        if st.session_state.valve_states.get("V-104", False):
+            active_paths += 1
+            
+        st.success(f"✅ Supply Active")
+        st.metric("Active Paths", active_paths)
+    else:
+        st.error("❌ Supply Blocked")
+        st.metric("Active Paths", 0)
     
     st.markdown("---")
     
@@ -150,13 +168,11 @@ with st.sidebar:
         if st.button("Open All", use_container_width=True):
             for tag in valves:
                 st.session_state.valve_states[tag] = True
-            st.session_state.animation_frame = (st.session_state.animation_frame + 1) % 10
             st.rerun()
     with col2:
         if st.button("Close All", use_container_width=True):
             for tag in valves:
                 st.session_state.valve_states[tag] = False
-            st.session_state.animation_frame = (st.session_state.animation_frame + 1) % 10
             st.rerun()
 
 # Main content area - P&ID display with flow
@@ -166,83 +182,74 @@ with col1:
     # Create and display the P&ID with flow animation
     composite_img = create_pid_with_flow()
     
-    # Add animation indicator
-    st.markdown(f"**Flow Status:** {'🌊 Flow Active' if any(st.session_state.valve_states.values()) else '💧 No Flow'}")
+    # Display flow status
+    supply_state = st.session_state.valve_states.get("V-101", False)
+    if supply_state:
+        st.success("🌊 **System Status:** SUPPLY ACTIVE - Flow available")
+    else:
+        st.error("💧 **System Status:** SUPPLY BLOCKED - No flow possible")
     
-    # Display the animated P&ID
-    st.image(composite_img, use_container_width=True, caption="Interactive P&ID - Blue pipes show active flow")
-    
-    # Auto-refresh for animation (optional)
-    if st.checkbox("Auto-refresh flow display", value=True):
-        time.sleep(0.5)
-        st.session_state.animation_frame = (st.session_state.animation_frame + 1) % 10
-        st.rerun()
+    # Display the P&ID
+    st.image(composite_img, use_container_width=True, caption="Interactive P&ID - Flow depends on V-101 (Supply Valve)")
 
 with col2:
     # Right sidebar for detailed status
-    st.header("🔍 System Status")
+    st.header("🔍 Flow Analysis")
     st.markdown("---")
     
-    # Flow direction indicators
-    st.subheader("Flow Directions")
-    if st.session_state.valve_states.get("V-101", False) and st.session_state.valve_states.get("V-102", False):
-        st.success("✅ Main Line Flow")
-    else:
-        st.error("❌ Main Line Blocked")
-        
-    if st.session_state.valve_states.get("V-103", False):
-        st.success("✅ Branch Line Flow")
-    else:
-        st.error("❌ Branch Line Blocked")
+    # Flow path analysis
+    st.subheader("Flow Paths")
     
-    st.markdown("---")
+    supply_open = st.session_state.valve_states.get("V-101", False)
     
-    # Valve details
-    st.subheader("Valve Details")
-    for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        status = "🟢 OPEN" if current_state else "🔴 CLOSED"
+    if supply_open:
+        st.write("**Available Paths:**")
         
-        with st.expander(f"{tag} - {status}", expanded=False):
-            st.write(f"**Position:** ({data['x']}, {data['y']})")
-            st.write(f"**Impact:** {'Allows flow' if current_state else 'Blocks flow'}")
+        if st.session_state.valve_states.get("V-102", False):
+            if st.session_state.valve_states.get("V-103", False):
+                st.success("✅ Main Line: V-101 → V-102 → V-103")
+            else:
+                st.warning("⚠️ Main Line: V-101 → V-102 (stopped at V-103)")
+        else:
+            st.error("❌ Main Line: Blocked at V-102")
             
-            # Mini toggle inside expander
-            if st.button(f"Toggle {tag}", key=f"mini_{tag}", use_container_width=True):
-                st.session_state.valve_states[tag] = not current_state
-                st.session_state.animation_frame = (st.session_state.animation_frame + 1) % 10
-                st.rerun()
+        if st.session_state.valve_states.get("V-104", False):
+            st.success("✅ Branch Line: V-101 → V-104")
+        else:
+            st.error("❌ Branch Line: Blocked at V-104")
+    else:
+        st.error("❌ All paths blocked - V-101 (Supply) is closed")
 
-# Bottom section for flow legend and instructions
+# Instructions with specific scenarios
 st.markdown("---")
-st.markdown("### 🌊 Flow Legend & Instructions")
+st.markdown("### 🎯 Test Scenarios")
 
-col1, col2, col3 = st.columns(3)
+scenario_col1, scenario_col2, scenario_col3 = st.columns(3)
 
-with col1:
-    st.markdown("**Pipe Colors:**")
-    st.markdown("- 🔵 **Blue** = Active Flow")
-    st.markdown("- ⚫ **Gray** = No Flow")
-    st.markdown("- 🟢 **Green Circle** = Valve OPEN")
-    st.markdown("- 🔴 **Red Circle** = Valve CLOSED")
+with scenario_col1:
+    st.markdown("**Scenario 1: Full Flow**")
+    st.markdown("- Open: V-101, V-102, V-103, V-104")
+    st.markdown("- Result: All pipes blue")
+    if st.button("Apply Scenario 1", key="scenario1"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = True
+        st.rerun()
 
-with col2:
-    st.markdown("**Flow Logic:**")
-    st.markdown("- Flow requires OPEN valves")
-    st.markdown("- Closed valves block flow")
-    st.markdown("- Multiple valves control complex paths")
-    st.markdown("- Real-time visual feedback")
+with scenario_col2:
+    st.markdown("**Scenario 2: Supply Only**")
+    st.markdown("- Open: V-101 only")
+    st.markdown("- Close: V-102, V-103, V-104")
+    st.markdown("- Result: Only supply pipe blue")
+    if st.button("Apply Scenario 2", key="scenario2"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = (tag == "V-101")
+        st.rerun()
 
-with col3:
-    st.markdown("**Try These:**")
-    st.markdown("- Open V-101 & V-102 for main flow")
-    st.markdown("- Close V-102 to see flow stop")
-    st.markdown("- Experiment with different combinations")
-
-# Debug information
-with st.expander("🔧 System Configuration"):
-    st.write("**Valve States:**")
-    for tag, state in st.session_state.valve_states.items():
-        st.write(f"- {tag}: {'OPEN' if state else 'CLOSED'}")
-    
-    st.write("**Animation Frame:**", st.session_state.animation_frame)
+with scenario_col3:
+    st.markdown("**Scenario 3: No Flow**")
+    st.markdown("- Close: All valves")
+    st.markdown("- Result: All pipes gray")
+    if st.button("Apply Scenario 3", key="scenario3"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = False
+        st.rerun()
