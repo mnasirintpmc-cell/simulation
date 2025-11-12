@@ -60,7 +60,7 @@ def create_pid_with_pipes():
             draw.ellipse([x1-4, y1-4, x1+4, y1+4], fill=(255, 0, 0))  # Red dot start
             draw.ellipse([x2-4, y2-4, x2+4, y2+4], fill=(0, 255, 0))  # Green dot end
         
-        # Draw valves with bright colors
+        # Draw valves with ORIGINAL SMALLER sizes
         for tag, data in valves.items():
             x, y = data["x"], data["y"]
             current_state = st.session_state.valve_states.get(tag, False)
@@ -68,11 +68,11 @@ def create_pid_with_pipes():
             # Bright colors for valves
             valve_color = (0, 255, 0) if current_state else (255, 0, 0)  # Green/Red
             
-            # Draw larger valve indicators
-            draw.ellipse([x-15, y-15, x+15, y+15], fill=valve_color, outline="black", width=3)
+            # ORIGINAL SMALLER valve indicators (16px diameter instead of 30px)
+            draw.ellipse([x-8, y-8, x+8, y+8], fill=valve_color, outline="black", width=2)
             
             # Draw valve tag with background
-            draw.text((x+18, y-12), tag, fill="black")
+            draw.text((x+10, y-6), tag, fill="black")
         
         return pid_img.convert("RGB")
     
@@ -90,12 +90,6 @@ if "valve_states" not in st.session_state:
 
 if "selected_pipe" not in st.session_state:
     st.session_state.selected_pipe = None
-
-if "pipe_offset_x" not in st.session_state:
-    st.session_state.pipe_offset_x = 0
-
-if "pipe_offset_y" not in st.session_state:
-    st.session_state.pipe_offset_y = 0
 
 # Main app
 st.title("P&ID Interactive Simulation - Pipe Editor")
