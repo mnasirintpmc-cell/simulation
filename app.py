@@ -1,4 +1,36 @@
-import streamlit as st
+def load_lines():
+    if not os.path.exists(LINES_FILE):
+        st.warning("Missing pipes.json")
+        return []
+
+    try:
+        with open(LINES_FILE) as f:
+            raw = json.load(f)
+    except:
+        return []
+
+    # Get valve positions
+    valve_pos = {tag: (data["x"], data["y"]) for tag, data in valves.items()}
+
+    # Snap function
+    def snap(point):
+        x, y = point
+        best_tag = None
+        best_dist = float('inf')
+        for tag, (vx, vy) in valve_pos.items():
+            dist = math.hypot(vx - x, vy - y)
+            if dist < best_dist and dist < 100:
+                best_dist = dist
+                best_tag = tag
+        return (valve_pos[best_tag] if best_tag else point)
+
+    snapped_lines = []
+    for line in raw:
+        p1 = snap((line["x1"], line["y1"]))
+        p2 = snap((line["x2"], line["y2"]))
+        if p1 != p2:
+            snapped_lines.append({"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]})
+    return snapped_linesimport streamlit as st
 import json
 from PIL import Image, ImageDraw, ImageFont
 import os
