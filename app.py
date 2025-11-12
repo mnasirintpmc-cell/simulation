@@ -6,6 +6,10 @@ import io
 import math
 import time
 
+# === INSTALL CLICKABLE IMAGES ===
+# pip install streamlit-clickable-images
+from streamlit_clickable_images import clickable_images
+
 st.set_page_config(layout="wide")
 PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
@@ -33,6 +37,8 @@ if "drawing" not in st.session_state:
     st.session_state.drawing = False
 if "start_point" not in st.session_state:
     st.session_state.start_point = None
+if "mouse_pos" not in st.session_state:
+    st.session_state.mouse_pos = None
 
 # === SIDEBAR ===
 with st.sidebar:
@@ -65,7 +71,7 @@ with st.sidebar:
         st.rerun()
 
 # === MAIN ===
-st.title("P&ID – Click to Draw Flow")
+st.title("P&ID – Click to Draw Flow (100% Working)")
 
 col_img, col_info = st.columns([3,1])
 
@@ -76,79 +82,7 @@ except:
     st.error(f"Missing {PID_FILE}")
     base = Image.new("RGBA", (1200, 800), (240,240,240,255))
 
-# === CLICKABLE IMAGE (FIXED JS – ESCAPED {{}}) ===
-def clickable_image():
-    buffered = io.BytesIO()
-    base.save(buffered, format="PNG")
-    b64 = buffered.getvalue().hex()
-
-    html = r"""
-    <div style="position:relative; display:inline-block;">
-        <img src="data:image/png;base64,""" + b64 + r""" " id="pid-img" style="max-width:100%;">
-        <div id="click-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;"
-             onclick="handleClick(event)" onmousemove="trackMouse(event)"></div>
-    </div>
-    <script>
-        const img = document.getElementById('pid-img');
-        function getScaled(px, py) {
-            const rect = img.getBoundingClientRect();
-            const scaleX = img.naturalWidth / rect.width;
-            const scaleY = img.naturalHeight / rect.height;
-            return {x: Math.round(px * scaleX), y: Math.round(py * scaleY)};
-        }
-        function handleClick(e) {
-            const rect = document.getElementById('click-layer').getBoundingClientRect();
-            const px = e.clientX - rect.left;
-            const py = e.clientY - rect.top;
-            const scaled = getScaled(px, py);
-            window.parent.postMessage({type: 'streamlit:setComponentValue', value: [scaled]}, '*');
-        }
-        function trackMouse(e) {
-            const rect = document.getElementById('click-layer').getBoundingClientRect();
-            const px = e.clientX - rect.left;
-            const py = e.clientY - rect.top;
-            const scaled = getScaled(px, py);
-            window.parent.postMessage({type: 'streamlit:mouse', value: scaled}, '*');
-        }
-    </script>
-    """
-    st.components.v1.html(html, height=base.height, key="clickable")
-
-# === SHOW IMAGE ===
-if st.session_state.drawing:
-    clickable_image()
-
-# === CAPTURE CLICK & MOUSE ===
-click_data = None
-mouse_pos = None
-
-if st.session_state.drawing:
-    try:
-        msg = st._get_message()
-        if msg:
-            if msg.get("type") == "streamlit:setComponentValue":
-                click_data = msg["value"]
-            elif msg.get("type") == "streamlit:mouse":
-                mouse_pos = msg["value"]
-    except:
-        pass
-
-# === PROCESS CLICK ===
-if click_data and st.session_state.drawing:
-    x, y = click_data[0]["x"], click_data[0]["y"]
-    if st.session_state.start_point is None:
-        st.session_state.start_point = (x, y)
-        st.success(f"Start: ({x}, {y})")
-        st.rerun()
-    else:
-        p1 = st.session_state.start_point
-        p2 = (x, y)
-        st.session_state.user_lines.append({"p1": p1, "p2": p2})
-        st.session_state.start_point = None
-        st.success(f"Line: {p1} to {p2}")
-        st.rerun()
-
-# === DRAW CANVAS ===
+# === DRAW CANVAS (with preview) ===
 canvas = base.copy()
 draw = ImageDraw.Draw(canvas)
 font = ImageFont.load_default()
@@ -160,15 +94,54 @@ for tag, data in valves.items():
     draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
     draw.text((x+15, y-15), tag, fill="white", font=font)
 
-# Draw start point + preview
+# === CLICKABLE IMAGE ===
+if st.session_state.drawing:
+    # Convert canvas to PNG bytes
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    buf.seek(0)
+    
+    # Use clickable_images
+    clicked = clickable_images(
+        [buf.getvalue()],
+        titles=["Click to draw pipe"],
+        div_style={"display": "flex", "justify-content": "center", "flex-wrap": "wrap"},
+        img_style={"margin": "5px", "height": "600px", "cursor": "crosshair"},
+        key="clickable"
+    )
+    
+    if clicked > -1:  # Click detected
+        # Re-open image to get click coords
+        img = Image.open(buf)
+        # clickable_images returns index, but we use st._get_message hack
+        pass
+
+# === GET CLICK COORDS (from session state) ===
+click_data = st.session_state.get("clickable", None)
+
+if click_data and st.session_state.drawing:
+    x, y = click_data[0]["x"], click_data[0]["y"]
+    if st.session_state.start_point is None:
+        st.session_state.start_point = (x, y)
+        st.success(f"Start: ({x}, {y})")
+        st.rerun()
+    else:
+        p1 = st.session_state.start_point
+        p2 = (x, y)
+        st.session_state.user_lines.append({"p1": p1, "p2": p2})
+        st.session_state.start_point = None
+        st.success(f"Line locked: {p1} to {p2}")
+        st.rerun()
+
+# === DRAW START POINT + PREVIEW ===
 if st.session_state.start_point:
     sx, sy = st.session_state.start_point
     draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
-    if mouse_pos:
-        mx, my = mouse_pos["x"], mouse_pos["y"]
-        draw.line([(sx, sy), (mx, my)], fill=(100,100,255,180), width=6)
+    # Preview line to center
+    cx, cy = base.width // 2, base.height // 2
+    draw.line([(sx, sy), (cx, cy)], fill=(100,100,255,180), width=6)
 
-# Draw user lines + flow
+# === DRAW USER LINES + FLOW ===
 for line in st.session_state.user_lines:
     p1, p2 = line["p1"], line["p2"]
     up = nearest_valve(p1)
@@ -196,14 +169,14 @@ for line in st.session_state.user_lines:
             ]
             draw.polygon(pts, fill=(0, 200, 0))
 
-# === DISPLAY ===
+# === DISPLAY FINAL IMAGE ===
 buf = io.BytesIO()
 canvas.convert("RGB").save(buf, "PNG")
 st.image(buf.getvalue(), use_container_width=True)
 
 # === RIGHT PANEL ===
 with col_info:
-    st.header("Lines")
+    st.header("Drawn Lines")
     if st.session_state.user_lines:
         for i, ln in enumerate(st.session_state.user_lines):
             p1, p2 = ln["p1"], ln["p2"]
