@@ -67,7 +67,7 @@ with st.sidebar:
         st.rerun()
 
 # === MAIN ===
-st.title("P&ID – Click to Draw Flow Path")
+st.title("P&ID – Click to Draw Flow")
 
 col_img, col_info = st.columns([3,1])
 
@@ -78,39 +78,35 @@ except:
     st.error(f"Missing {PID_FILE}")
     base = Image.new("RGBA", (1200, 800), (240,240,240,255))
 
-# === CLICKABLE IMAGE (FIXED JS) ===
+# === CLICKABLE IMAGE (NO RETURN) ===
 def clickable_image():
     buffered = io.BytesIO()
     base.save(buffered, format="PNG")
     b64 = buffered.getvalue().hex()
 
-    html = """
+    html = f"""
     <div style="position:relative; display:inline-block;">
-        <img src="data:image/png;base64,""" + b64 + """ " id="pid-img" style="max-width:100%;">
-        <div id="click-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;" 
+        <img src="data:image/png;base64,{b64}" id="pid-img" style="max-width:100%;">
+        <div id="click-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;"
              onclick="handleClick(event)" onmousemove="trackMouse(event)"></div>
     </div>
     <script>
         const img = document.getElementById('pid-img');
-        const layer = document.getElementById('click-layer');
-
         function getScaled(px, py) {
             const rect = img.getBoundingClientRect();
             const scaleX = img.naturalWidth / rect.width;
             const scaleY = img.naturalHeight / rect.height;
             return {x: Math.round(px * scaleX), y: Math.round(py * scaleY)};
         }
-
         function handleClick(e) {
-            const rect = layer.getBoundingClientRect();
+            const rect = document.getElementById('click-layer').getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
             const scaled = getScaled(px, py);
             window.parent.postMessage({type: 'streamlit:setComponentValue', value: [scaled]}, '*');
         }
-
         function trackMouse(e) {
-            const rect = layer.getBoundingClientRect();
+            const rect = document.getElementById('click-layer').getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
             const scaled = getScaled(px, py);
@@ -118,21 +114,23 @@ def clickable_image():
         }
     </script>
     """
-    return st.components.v1.html(html, height=base.height, key="clickable")
+    st.components.v1.html(html, height=base.height, key="clickable")
+
+# === SHOW CLICKABLE IMAGE (only when drawing) ===
+if st.session_state.drawing:
+    clickable_image()
 
 # === CAPTURE CLICK & MOUSE ===
 click_data = None
-mouse_data = None
+mouse_pos = None
 
 if st.session_state.drawing:
-    clickable_image()
-    # Read messages
     msg = st._get_message()
     if msg:
         if msg.get("type") == "streamlit:setComponentValue":
             click_data = msg["value"]
         elif msg.get("type") == "streamlit:mouse":
-            mouse_data = msg["value"]
+            mouse_pos = msg["value"]
 
 # === PROCESS CLICK ===
 if click_data and st.session_state.drawing:
@@ -146,7 +144,7 @@ if click_data and st.session_state.drawing:
         p2 = (x, y)
         st.session_state.user_lines.append({"p1": p1, "p2": p2})
         st.session_state.start_point = None
-        st.success(f"Line locked: {p1} → {p2}")
+        st.success(f"Line locked: {p1} to {p2}")
         st.rerun()
 
 # === DRAW CANVAS ===
@@ -161,14 +159,12 @@ for tag, data in valves.items():
     draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
     draw.text((x+15, y-15), tag, fill="white", font=font)
 
-# Draw start point
+# Draw start point + preview
 if st.session_state.start_point:
     sx, sy = st.session_state.start_point
     draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
-
-    # Preview line to mouse
-    if mouse_data:
-        mx, my = mouse_data["x"], mouse_data["y"]
+    if mouse_pos:
+        mx, my = mouse_pos["x"], mouse_pos["y"]
         draw.line([(sx, sy), (mx, my)], fill=(100,100,255,180), width=6)
 
 # Draw user lines + flow
@@ -206,7 +202,7 @@ st.image(buf.getvalue(), use_container_width=True)
 
 # === RIGHT PANEL ===
 with col_info:
-    st.header("Lines")
+    st.header("Drawn Lines")
     if st.session_state.user_lines:
         for i, ln in enumerate(st.session_state.user_lines):
             p1, p2 = ln["p1"], ln["p2"]
@@ -216,7 +212,7 @@ with col_info:
                                 st.session_state.valve_states.get(up, False) and 
                                 st.session_state.valve_states.get(down, False)) else "Blocked"
             st.write(f"**Line {i+1}**: {status}")
-            st.caption(f"{p1} → {p2}\nUp: {up or '—'} | Down: {down or '—'}")
+            st.caption(f"{p1} to {p2}\nUp: {up or '—'} | Down: {down or '—'}")
             if st.button("Delete", key=f"del_{i}"):
                 st.session_state.user_lines.pop(i)
                 st.rerun()
