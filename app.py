@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 from PIL import Image, ImageDraw, ImageFont
-import os   # <-- THIS WAS MISSING
+import os
 import io
 import math
 import time
@@ -10,15 +10,14 @@ st.set_page_config(layout="wide")
 PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
 
-# === LOAD VALVES (SAFE) ===
+# === LOAD VALVES ===
 def load_valves():
     if not os.path.exists(DATA_FILE):
-        st.error(f"Missing {DATA_FILE}. Upload it with valve positions.")
+        st.error(f"Missing {DATA_FILE}")
         st.stop()
     try:
         with open(DATA_FILE, "r") as f:
-            data = json.load(f)
-            return data
+            return json.load(f)
     except Exception as e:
         st.error(f"Invalid {DATA_FILE}: {e}")
         st.stop()
@@ -34,8 +33,6 @@ if "drawing" not in st.session_state:
     st.session_state.drawing = False
 if "start_point" not in st.session_state:
     st.session_state.start_point = None
-if "mouse_pos" not in st.session_state:
-    st.session_state.mouse_pos = None
 
 # === SIDEBAR ===
 with st.sidebar:
@@ -58,7 +55,7 @@ with st.sidebar:
     st.metric("Closed", len(valves) - open_cnt)
 
     st.markdown("---")
-    if st.button("Start Drawing Pipe", use_container_width=True):
+    if st.button("Start Drawing", use_container_width=True):
         st.session_state.drawing = True
         st.session_state.start_point = None
         st.rerun()
@@ -68,7 +65,7 @@ with st.sidebar:
         st.rerun()
 
 # === MAIN ===
-st.title("P&ID – Click to Draw Flow (Visual Feedback)")
+st.title("P&ID – Click to Draw Flow Path")
 
 col_img, col_info = st.columns([3,1])
 
@@ -79,75 +76,89 @@ except:
     st.error(f"Missing {PID_FILE}")
     base = Image.new("RGBA", (1200, 800), (240,240,240,255))
 
-# === CLICKABLE IMAGE WITH MOUSE TRACKING ===
+# === CLICKABLE IMAGE (ROBUST) ===
 def clickable_image():
     buffered = io.BytesIO()
     base.save(buffered, format="PNG")
     b64 = buffered.getvalue().hex()
 
     html = f"""
-    <div style="position:relative; display:inline-block;">
+    <div id="clickable-container" style="position:relative; display:inline-block;">
         <img src="data:image/png;base64,{b64}" id="pid-img" style="max-width:100%;">
-        <div style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;"
-             onmousemove="trackMouse(event)"
-             onclick="handleClick(event)"></div>
+        <canvas id="overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;"></canvas>
     </div>
     <script>
         const img = document.getElementById('pid-img');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
+        
+        function resize() {{
+            canvas.width = img.clientWidth;
+            canvas.height = img.clientHeight;
+        }}
+        resize();
+        window.addEventListener('resize', resize);
+
         function getScaled(x, y) {{
-            const rect = img.getBoundingClientRect();
+            const rect = canvas.getBoundingClientRect();
             const scaleX = img.naturalWidth / rect.width;
             const scaleY = img.naturalHeight / rect.height;
             return {{x: Math.round(x * scaleX), y: Math.round(y * scaleY)}};
         }}
-        function handleClick(e) {{
-            const rect = img.getBoundingClientRect();
+
+        canvas.addEventListener('click', (e) => {{
+            const rect = canvas.getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
             const scaled = getScaled(px, py);
-            window.parent.postMessage({{type:'streamlit:setComponentValue', value: [scaled]}}, '*');
-        }}
-        function trackMouse(e) {{
-            const rect = img.getBoundingClientRect();
+            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: [scaled]}}, '*');
+        }});
+
+        canvas.addEventListener('mousemove', (e) => {{
+            const rect = canvas.getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
             const scaled = getScaled(px, py);
-            window.parent.postMessage({{type:'streamlit:mouse', value: scaled}}, '*');
-        }}
+            window.parent.postMessage({{type: 'streamlit:mouse', value: scaled}}, '*');
+        }});
     </script>
     """
-    return st.components.v1.html(html, height=base.height, key="clickable")
+    return st.components.v1.html(html, height=base.height + 50, key="clickable_img")
 
 # === CAPTURE CLICK & MOUSE ===
 click_data = None
-mouse_data = None
+mouse_pos = None
 
 if st.session_state.drawing:
     result = clickable_image()
-    # Streamlit returns click via setComponentValue
-    if hasattr(result, "value") and result.value:
-        click_data = result.value
+    # result is None, but messages come via postMessage
+    # We use a workaround with st.session_state
+    pass  # click handled below
 
-    # Listen for mouse move
-    if st._is_running_with_streamlit:
-        import streamlit.components.v1 as components
-        mouse_msg = components._get_message()
-        if mouse_msg and mouse_msg.get("type") == "streamlit:mouse":
-            mouse_data = mouse_msg["value"]
+# === READ MESSAGES (Streamlit hack) ===
+if st.session_state.drawing:
+    try:
+        msg = st._get_message()
+        if msg and msg.get("type") == "streamlit:setComponentValue":
+            click_data = msg["value"]
+        elif msg and msg.get("type") == "streamlit:mouse":
+            mouse_pos = msg["value"]
+    except:
+        pass
 
 # === PROCESS CLICK ===
 if click_data and st.session_state.drawing:
     x, y = click_data[0]["x"], click_data[0]["y"]
     if st.session_state.start_point is None:
         st.session_state.start_point = (x, y)
-        st.success(f"Start point: ({x}, {y})")
+        st.success(f"Start: ({x}, {y})")
         st.rerun()
     else:
         p1 = st.session_state.start_point
         p2 = (x, y)
         st.session_state.user_lines.append({"p1": p1, "p2": p2})
         st.session_state.start_point = None
-        st.success(f"Line locked: {p1} → {p2}")
+        st.success(f"Line: {p1} to {p2}")
         st.rerun()
 
 # === DRAW CANVAS ===
@@ -167,12 +178,11 @@ if st.session_state.start_point:
     sx, sy = st.session_state.start_point
     draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
 
-    # Preview line to mouse
-    if mouse_data:
-        mx, my = mouse_data["x"], mouse_data["y"]
+    # Preview line
+    if mouse_pos:
+        mx, my = mouse_pos["x"], mouse_pos["y"]
         draw.line([(sx, sy), (mx, my)], fill=(100,100,255,180), width=6)
     else:
-        # Fallback: to center
         cx, cy = base.width // 2, base.height // 2
         draw.line([(sx, sy), (cx, cy)], fill=(100,100,255,180), width=6)
 
@@ -211,7 +221,7 @@ st.image(buf.getvalue(), use_container_width=True)
 
 # === RIGHT PANEL ===
 with col_info:
-    st.header("Drawn Lines")
+    st.header("Lines")
     if st.session_state.user_lines:
         for i, ln in enumerate(st.session_state.user_lines):
             p1, p2 = ln["p1"], ln["p2"]
@@ -221,7 +231,7 @@ with col_info:
                                 st.session_state.valve_states.get(up, False) and 
                                 st.session_state.valve_states.get(down, False)) else "Blocked"
             st.write(f"**Line {i+1}**: {status}")
-            st.caption(f"{p1} → {p2}\nUp: {up or '—'} | Down: {down or '—'}")
+            st.caption(f"{p1} to {p2}\nUp: {up or '—'} | Down: {down or '—'}")
             if st.button("Delete", key=f"del_{i}"):
                 st.session_state.user_lines.pop(i)
                 st.rerun()
