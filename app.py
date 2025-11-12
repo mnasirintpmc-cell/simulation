@@ -5,10 +5,7 @@ import os
 import io
 import math
 import time
-
-# === INSTALL CLICKABLE IMAGES ===
-# pip install streamlit-clickable-images
-from streamlit_clickable_images import clickable_images
+from urllib.parse import parse_qs
 
 st.set_page_config(layout="wide")
 PID_FILE = "P&ID.png"
@@ -37,8 +34,6 @@ if "drawing" not in st.session_state:
     st.session_state.drawing = False
 if "start_point" not in st.session_state:
     st.session_state.start_point = None
-if "mouse_pos" not in st.session_state:
-    st.session_state.mouse_pos = None
 
 # === SIDEBAR ===
 with st.sidebar:
@@ -71,7 +66,7 @@ with st.sidebar:
         st.rerun()
 
 # === MAIN ===
-st.title("P&ID – Click to Draw Flow (100% Working)")
+st.title("P&ID – Click to Draw Flow (No Packages)")
 
 col_img, col_info = st.columns([3,1])
 
@@ -82,7 +77,36 @@ except:
     st.error(f"Missing {PID_FILE}")
     base = Image.new("RGBA", (1200, 800), (240,240,240,255))
 
-# === DRAW CANVAS (with preview) ===
+# === GET CLICK FROM URL QUERY PARAMS ===
+query_params = st.experimental_get_query_params()
+click_param = query_params.get("click", [None])[0]
+if click_param:
+    try:
+        x, y = map(int, click_param.split(","))
+        click_data = [{"x": x, "y": y}]
+    except:
+        click_data = None
+else:
+    click_data = None
+
+# === PROCESS CLICK ===
+if click_data and st.session_state.drawing:
+    x, y = click_data[0]["x"], click_data[0]["y"]
+    if st.session_state.start_point is None:
+        st.session_state.start_point = (x, y)
+        st.success(f"Start point: ({x}, {y})")
+        st.experimental_set_query_params(click={"": None})  # Clear param
+        st.rerun()
+    else:
+        p1 = st.session_state.start_point
+        p2 = (x, y)
+        st.session_state.user_lines.append({"p1": p1, "p2": p2})
+        st.session_state.start_point = None
+        st.success(f"Line locked: {p1} → {p2}")
+        st.experimental_set_query_params(click={"": None})  # Clear param
+        st.rerun()
+
+# === DRAW CANVAS ===
 canvas = base.copy()
 draw = ImageDraw.Draw(canvas)
 font = ImageFont.load_default()
@@ -94,54 +118,15 @@ for tag, data in valves.items():
     draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
     draw.text((x+15, y-15), tag, fill="white", font=font)
 
-# === CLICKABLE IMAGE ===
-if st.session_state.drawing:
-    # Convert canvas to PNG bytes
-    buf = io.BytesIO()
-    canvas.save(buf, format="PNG")
-    buf.seek(0)
-    
-    # Use clickable_images
-    clicked = clickable_images(
-        [buf.getvalue()],
-        titles=["Click to draw pipe"],
-        div_style={"display": "flex", "justify-content": "center", "flex-wrap": "wrap"},
-        img_style={"margin": "5px", "height": "600px", "cursor": "crosshair"},
-        key="clickable"
-    )
-    
-    if clicked > -1:  # Click detected
-        # Re-open image to get click coords
-        img = Image.open(buf)
-        # clickable_images returns index, but we use st._get_message hack
-        pass
-
-# === GET CLICK COORDS (from session state) ===
-click_data = st.session_state.get("clickable", None)
-
-if click_data and st.session_state.drawing:
-    x, y = click_data[0]["x"], click_data[0]["y"]
-    if st.session_state.start_point is None:
-        st.session_state.start_point = (x, y)
-        st.success(f"Start: ({x}, {y})")
-        st.rerun()
-    else:
-        p1 = st.session_state.start_point
-        p2 = (x, y)
-        st.session_state.user_lines.append({"p1": p1, "p2": p2})
-        st.session_state.start_point = None
-        st.success(f"Line locked: {p1} to {p2}")
-        st.rerun()
-
-# === DRAW START POINT + PREVIEW ===
+# Draw start point + preview
 if st.session_state.start_point:
     sx, sy = st.session_state.start_point
     draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
-    # Preview line to center
+    # Preview line to center (fallback)
     cx, cy = base.width // 2, base.height // 2
     draw.line([(sx, sy), (cx, cy)], fill=(100,100,255,180), width=6)
 
-# === DRAW USER LINES + FLOW ===
+# Draw user lines + flow
 for line in st.session_state.user_lines:
     p1, p2 = line["p1"], line["p2"]
     up = nearest_valve(p1)
@@ -169,10 +154,37 @@ for line in st.session_state.user_lines:
             ]
             draw.polygon(pts, fill=(0, 200, 0))
 
-# === DISPLAY FINAL IMAGE ===
+# === DISPLAY WITH CLICK HANDLER ===
 buf = io.BytesIO()
 canvas.convert("RGB").save(buf, "PNG")
-st.image(buf.getvalue(), use_container_width=True)
+img_bytes = buf.getvalue()
+
+if st.session_state.drawing:
+    st.markdown("""
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const img = document.querySelector('img');
+        if (img) {
+            img.style.cursor = 'crosshair';
+            img.addEventListener('click', function(e) {
+                const rect = img.getBoundingClientRect();
+                const x = Math.round(e.clientX - rect.left);
+                const y = Math.round(e.clientY - rect.top);
+                const scaleX = img.naturalWidth / img.clientWidth;
+                const scaleY = img.naturalHeight / img.clientHeight;
+                const px = Math.round(x * scaleX);
+                const py = Math.round(y * scaleY);
+                const url = new URL(window.location);
+                url.searchParams.set('click', px + ',' + py);
+                window.history.pushState({}, '', url);
+                window.location.reload();
+            });
+        }
+    });
+    </script>
+    """, unsafe_allow_html=True)
+
+st.image(img_bytes, use_container_width=True)
 
 # === RIGHT PANEL ===
 with col_info:
@@ -191,7 +203,7 @@ with col_info:
                 st.session_state.user_lines.pop(i)
                 st.rerun()
     else:
-        st.info("Click **Start Drawing** and click two points.")
+        st.info("Click **Start Drawing** and click two points on the image.")
 
 # === HELPER ===
 def nearest_valve(point, max_dist=60):
