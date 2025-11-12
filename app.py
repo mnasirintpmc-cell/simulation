@@ -65,7 +65,7 @@ with st.sidebar:
         st.rerun()
 
 # === MAIN ===
-st.title("P&ID – Click to Draw Flow (FINAL)")
+st.title("P&ID – Click to Draw Flow (TESTED)")
 
 col_img, col_info = st.columns([3,1])
 
@@ -88,30 +88,38 @@ for tag, data in valves.items():
     draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
     draw.text((x+15, y-15), tag, fill="white", font=font)
 
-# === CLICK HANDLING VIA QUERY PARAMS (NO JS ERRORS) ===
+# === CLICK HANDLING ===
 if st.session_state.drawing:
-    # Generate image with click handler
+    # Save current canvas
     buf = io.BytesIO()
     canvas.save(buf, "PNG")
-    img_bytes = buf.getvalue()
+    img_b64 = buf.getvalue().hex()
 
-    # Add click handler via HTML
-    st.markdown(f"""
-    <img src="data:image/png;base64,{img_bytes.hex()}" 
-         style="max-width:100%; cursor:crosshair;"
-         onclick="
+    # HTML with click handler
+    html = f"""
+    <div style="position:relative;">
+        <img src="data:image/png;base64,{img_b64}" 
+             style="max-width:100%; cursor:crosshair;"
+             id="clickable-img">
+    </div>
+    <script>
+        document.getElementById('clickable-img').onclick = function(e) {{
             const rect = this.getBoundingClientRect();
-            const x = Math.round(event.clientX - rect.left);
-            const y = Math.round(event.clientY - rect.top);
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
             const scaleX = this.naturalWidth / this.clientWidth;
             const scaleY = this.naturalHeight / this.clientHeight;
             const px = Math.round(x * scaleX);
             const py = Math.round(y * scaleY);
-            window.location.href = window.location.pathname + '?click=' + px + ',' + py;
-         ">
-    """, unsafe_allow_html=True)
+            const url = new URL(window.location);
+            url.searchParams.set('click', px + ',' + py);
+            window.location = url;
+        }};
+    </script>
+    """
+    st.components.v1.html(html, height=base.height)
 
-    # Read click from URL
+    # Read click
     params = st.experimental_get_query_params()
     click = params.get("click", [None])[0]
     if click:
@@ -125,23 +133,23 @@ if st.session_state.drawing:
                 p2 = (x, y)
                 st.session_state.user_lines.append({"p1": p1, "p2": p2})
                 st.session_state.start_point = None
-                st.success(f"Line: {p1} to {p2}")
-            st.experimental_set_query_params()  # Clear
+                st.success(f"Line: {p1} → {p2}")
+            st.experimental_set_query_params()
             st.rerun()
         except:
-            pass
+            st.experimental_set_query_params()
+            st.rerun()
 else:
-    # Normal display
     buf = io.BytesIO()
     canvas.save(buf, "PNG")
     st.image(buf.getvalue(), use_container_width=True)
 
-# === DRAW START POINT (on canvas) ===
+# === DRAW START POINT ===
 if st.session_state.start_point:
     sx, sy = st.session_state.start_point
     draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
 
-# === DRAW USER LINES + FLOW ===
+# === DRAW LINES + FLOW ===
 for line in st.session_state.user_lines:
     p1, p2 = line["p1"], line["p2"]
     up = nearest_valve(p1)
@@ -164,7 +172,7 @@ for line in st.session_state.user_lines:
             ]
             draw.polygon(pts, fill=(0, 200, 0))
 
-# === DISPLAY FINAL IMAGE (below clickable one) ===
+# === DISPLAY FINAL IMAGE ===
 buf = io.BytesIO()
 canvas.convert("RGB").save(buf, "PNG")
 st.image(buf.getvalue(), use_container_width=True)
@@ -181,7 +189,7 @@ with col_info:
                                 st.session_state.valve_states.get(up, False) and 
                                 st.session_state.valve_states.get(down, False)) else "Blocked"
             st.write(f"**Line {i+1}**: {status}")
-            st.caption(f"{p1} to {p2}\nUp: {up or '—'} | Down: {down or '—'}")
+            st.caption(f"{p1} → {p2}\nUp: {up or '—'} | Down: {down or '—'}")
             if st.button("Delete", key=f"del_{i}"):
                 st.session_state.user_lines.pop(i)
                 st.rerun()
