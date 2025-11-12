@@ -1,236 +1,124 @@
 import streamlit as st
 import json
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import os
-import math
-import time
-import io
 
 st.set_page_config(layout="wide")
 
-# === CONFIG ===
-PID_FILE     = "P&ID.png"
-VALVES_FILE  = "valves.json"
-LINES_FILE   = "pipes.json"  # Your Figma export (SVG or JSON)
+# Configuration
+PID_FILE = "P&ID.png"
+DATA_FILE = "valves.json"
+PIPES_DATA_FILE = "pipes.json"
 
-# === AUTO-SCALE LINES FROM FIGMA TO P&ID SIZE ===
-def scale_lines(lines, figma_w=184, figma_h=259, target_w=1200, target_h=800):
-    if not lines:
-        return []
-    scale_x = target_w / figma_w
-    scale_y = target_h / figma_h
-    scaled = []
-    for line in lines:
-        try:
-            scaled.append({
-                "x1": int(line["x1"] * scale_x),
-                "y1": int(line["y1"] * scale_y),
-                "x2": int(line["x2"] * scale_x),
-                "y2": int(line["y2"] * scale_y)
-            })
-        except:
-            # Handle SVG format
-            scaled.append({
-                "x1": int(float(line.get("x1", 0)) * scale_x),
-                "y1": int(float(line.get("y1", 0)) * scale_y),
-                "x2": int(float(line.get("x2", 0)) * scale_x),
-                "y2": int(float(line.get("y2", 0)) * scale_y)
-            })
-    return scaled
-
-# === LOAD VALVES ===
 def load_valves():
-    if not os.path.exists(VALVES_FILE):
-        st.error(f"Missing {VALVES_FILE}")
-        st.stop()
-    try:
-        with open(VALVES_FILE) as f:
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
             return json.load(f)
+    return {}
+
+def load_pipes():
+    if os.path.exists(PIPES_DATA_FILE):
+        with open(PIPES_DATA_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def create_pid_with_pipes():
+    """Create P&ID display with pipes and valves"""
+    try:
+        # Try to load the actual P&ID image first
+        try:
+            pid_img = Image.open(PID_FILE).convert("RGBA")
+        except:
+            # If no P&ID image, create a white background
+            pid_img = Image.new("RGBA", (1200, 800), (255, 255, 255, 255))
+        
+        draw = ImageDraw.Draw(pid_img)
+        
+        # Load data
+        valves = load_valves()
+        pipes = load_pipes()
+        
+        # Draw pipes with bright colors and thicker lines
+        for pipe in pipes:
+            x1, y1, x2, y2 = pipe["x1"], pipe["y1"], pipe["x2"], pipe["y2"]
+            
+            # Make pipes more visible - bright blue with thick lines
+            pipe_color = (0, 0, 255)  # Bright blue
+            pipe_width = 8  # Thicker lines
+            
+            draw.line([(x1, y1), (x2, y2)], fill=pipe_color, width=pipe_width)
+        
+        # Draw valves with bright colors
+        for tag, data in valves.items():
+            x, y = data["x"], data["y"]
+            current_state = st.session_state.valve_states.get(tag, False)
+            
+            # Bright colors for valves
+            valve_color = (0, 255, 0) if current_state else (255, 0, 0)  # Green/Red
+            
+            # Draw larger valve indicators
+            draw.ellipse([x-15, y-15, x+15, y+15], fill=valve_color, outline="black", width=3)
+            
+            # Draw valve tag with background
+            draw.text((x+18, y-12), tag, fill="black")
+        
+        return pid_img.convert("RGB")
+    
     except Exception as e:
-        st.error(f"Invalid {VALVES_FILE}: {e}")
-        st.stop()
+        st.error(f"Error creating display: {e}")
+        return Image.new("RGB", (1200, 800), (255, 255, 255))
 
+# Load valve data
 valves = load_valves()
+pipes = load_pipes()
 
-# === LOAD LINES (SVG or JSON) + SCALE ===
-def load_lines():
-    if not os.path.exists(LINES_FILE):
-        st.warning(f"Missing {LINES_FILE} – upload your Figma export")
-        return []
-
-    raw_lines = []
-
-    if LINES_FILE.endswith(".svg"):
-        import xml.etree.ElementTree as ET
-        try:
-            tree = ET.parse(LINES_FILE)
-            root = tree.getroot()
-            ns = {'svg': 'http://www.w3.org/2000/svg'}
-            for line in root.findall('.//svg:line', ns):
-                try:
-                    x1 = int(float(line.get('x1', 0)))
-                    y1 = int(float(line.get('y1', 0)))
-                    x2 = int(float(line.get('x2', 0)))
-                    y2 = int(float(line.get('y2', 0)))
-                    if (x1, y1) != (x2, y2):
-                        raw_lines.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
-                except:
-                    pass
-        except Exception as e:
-            st.error(f"SVG error: {e}")
-    else:
-        try:
-            with open(LINES_FILE) as f:
-                data = json.load(f)
-            raw_lines = data.get("lines", data) if isinstance(data, dict) else data
-        except Exception as e:
-            st.error(f"JSON error: {e}")
-
-    # === AUTO-SCALE TO P&ID SIZE ===
-    try:
-        img = Image.open(PID_FILE)
-        target_w, target_h = img.size
-    except:
-        target_w, target_h = 1200, 800  # fallback
-
-    return scale_lines(raw_lines, target_w=target_w, target_h=target_h)
-
-lines = load_lines()
-
-# === SESSION STATE ===
+# Initialize session state
 if "valve_states" not in st.session_state:
-    st.session_state.valve_states = {
-        tag: bool(data.get("state", False)) for tag, data in valves.items()
-    }
+    st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
-# === SIDEBAR ===
+# Main app
+st.title("P&ID Interactive Simulation")
+
+# Debug info
+st.write(f"**Loaded valves:** {len(valves)}")
+st.write(f"**Loaded pipes:** {len(pipes)}")
+
+if pipes:
+    st.write("**First pipe coordinates:**", pipes[0])
+
+# Display the P&ID with pipes
+composite_img = create_pid_with_pipes()
+st.image(composite_img, use_container_width=True, caption="P&ID with Pipes and Valves")
+
+# Valve controls in sidebar
 with st.sidebar:
-    st.header("Valve Controls")
+    st.header("🎯 Valve Controls")
+    st.markdown("---")
+    
     for tag, data in valves.items():
-        state = st.session_state.valve_states[tag]
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button(
-                f"{'OPEN' if state else 'CLOSED'} {tag}",
-                type="primary" if state else "secondary",
-                key=f"btn_{tag}",
-                use_container_width=True,
-            ):
-                st.session_state.valve_states[tag] = not state
-                st.rerun()
-        with col2:
-            st.write("OPEN" if state else "CLOSED")
+        current_state = st.session_state.valve_states[tag]
+        button_label = f"🔴 {tag} - OPEN" if current_state else f"🟢 {tag} - CLOSED"
+        
+        if st.button(button_label, key=f"btn_{tag}", use_container_width=True):
+            st.session_state.valve_states[tag] = not current_state
+            st.rerun()
 
-    st.markdown("---")
-    open_cnt = sum(st.session_state.valve_states.values())
-    st.metric("Open", open_cnt)
-    st.metric("Closed", len(valves) - open_cnt)
-
-    st.markdown("---")
-    if st.button("Open All", use_container_width=True):
-        for t in valves:
-            st.session_state.valve_states[t] = True
+# Quick actions
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Open All Valves"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = True
         st.rerun()
-    if st.button("Close All", use_container_width=True):
-        for t in valves:
-            st.session_state.valve_states[t] = False
+with col2:
+    if st.button("Close All Valves"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = False
         st.rerun()
 
-# === MAIN ===
-st.title("P&ID – Figma Flow Paths (Auto-Scaled)")
-
-col_img, col_info = st.columns([3, 1])
-
-# === LOAD P&ID IMAGE ===
-try:
-    base = Image.open(PID_FILE).convert("RGBA")
-except:
-    st.error(f"Missing {PID_FILE}")
-    base = Image.new("RGBA", (1200, 800), (240, 240, 240, 255))
-
-canvas = base.copy()
-draw = ImageDraw.Draw(canvas)
-font = ImageFont.load_default()
-
-# === DRAW VALVES ===
-for tag, data in valves.items():
-    x, y = data["x"], data["y"]
-    col = (0, 255, 0, 255) if st.session_state.valve_states.get(tag, False) else (255, 0, 0, 255)
-    draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
-    draw.text((x+15, y-15), tag, fill="white", font=font)
-
-# === HELPER: Nearest valve ===
-def nearest_valve(point, max_dist=80):
-    x0, y0 = point
-    best = None
-    best_d = float('inf')
-    for tag, data in valves.items():
-        d = math.hypot(data["x"] - x0, data["y"] - y0)
-        if d < best_d and d <= max_dist:
-            best_d = d
-            best = tag
-    return best
-
-# === DRAW PIPES + FLOW ===
-for line in lines:
-    try:
-        p1 = (line["x1"], line["y1"])
-        p2 = (line["x2"], line["y2"])
-    except:
-        continue
-
-    up = nearest_valve(p1)
-    down = nearest_valve(p2)
-    flow = up and down and st.session_state.valve_states.get(up, False) and st.session_state.valve_states.get(down, False)
-
-    line_color = (0, 255, 0, 220) if flow else (255, 0, 0, 180)
-    draw.line([p1, p2], fill=line_color, width=8)
-
-    if flow:
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        length = math.hypot(dx, dy) or 1
-        for i in range(3):
-            ratio = (time.time() * 0.6 + i * 0.33) % 1
-            ax = p1[0] + dx * ratio
-            ay = p1[1] + dy * ratio
-            angle = math.atan2(dy, dx)
-            a_len = 14
-            pts = [
-                (ax, ay),
-                (ax - a_len * math.cos(angle - 0.5), ay - a_len * math.sin(angle - 0.5)),
-                (ax - a_len * math.cos(angle + 0.5), ay - a_len * math.sin(angle + 0.5)),
-            ]
-            draw.polygon(pts, fill=(0, 200, 0))
-
-# === DISPLAY IMAGE ===
-with col_img:
-    buf = io.BytesIO()
-    canvas.convert("RGB").save(buf, "PNG")
-    st.image(buf.getvalue(), use_container_width=True)
-
-# === RIGHT PANEL ===
-with col_info:
-    st.header("Pipe Status")
-    if lines:
-        for i, line in enumerate(lines):
-            try:
-                p1 = (line["x1"], line["y1"])
-                p2 = (line["x2"], line["y2"])
-            except:
-                continue
-            up = nearest_valve(p1) or "—"
-            down = nearest_valve(p2) or "—"
-            flow = up != "—" and down != "—" and st.session_state.valve_states.get(up, False) and st.session_state.valve_states.get(down, False)
-            status = "Flow" if flow else "Blocked"
-            st.write(f"**Pipe {i+1}**: {status}")
-            st.caption(f"{p1} → {p2}\nUp: {up} | Down: {down}")
-    else:
-        st.info("No pipes loaded – check `pipes.json`")
-
-# === DEBUG ===
-with st.expander("Debug Info"):
-    st.write("**P&ID Size:**", base.size)
-    st.write("**Loaded Pipes:**", len(lines))
-    st.json(lines[:5])  # Show first 5
-    st.write("**Valves:**", list(valves.keys()))
+# Debug information
+with st.expander("🔧 Debug Information"):
+    st.write("**Valves:**", valves)
+    st.write("**Pipes:**", pipes)
+    st.write("**Valve States:**", st.session_state.valve_states)
