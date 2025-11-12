@@ -1,209 +1,34 @@
-import streamlit as st
-import json
-from PIL import Image, ImageDraw, ImageFont
-import os
-import io
-import math
-import time
+def load_lines():
+    if not os.path.exists(LINES_FILE):
+        st.warning(f"Missing {LINES_FILE} – upload your Figma export")
+        return []
 
-st.set_page_config(layout="wide")
-PID_FILE = "P&ID.png"
-DATA_FILE = "valves.json"
-
-# === LOAD VALVES ===
-def load_valves():
-    if not os.path.exists(DATA_FILE):
-        st.error(f"Missing {DATA_FILE}")
-        st.stop()
-    try:
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        st.error(f"Invalid {DATA_FILE}: {e}")
-        st.stop()
-
-valves = load_valves()
-
-# === SESSION STATE ===
-if "valve_states" not in st.session_state:
-    st.session_state.valve_states = {tag: bool(data.get("state", False)) for tag, data in valves.items()}
-if "user_lines" not in st.session_state:
-    st.session_state.user_lines = []
-if "drawing" not in st.session_state:
-    st.session_state.drawing = False
-if "start_point" not in st.session_state:
-    st.session_state.start_point = None
-
-# === SIDEBAR ===
-with st.sidebar:
-    st.header("Valve Controls")
-    for tag, data in valves.items():
-        state = st.session_state.valve_states[tag]
-        col1, col2 = st.columns([3,1])
-        with col1:
-            if st.button(f"{'OPEN' if state else 'CLOSED'} {tag}",
-                        type="primary" if state else "secondary",
-                        key=f"btn_{tag}", use_container_width=True):
-                st.session_state.valve_states[tag] = not state
-                st.rerun()
-        with col2:
-            st.write("OPEN" if state else "CLOSED")
-
-    st.markdown("---")
-    open_cnt = sum(1 for v in st.session_state.valve_states.values() if v)
-    st.metric("Open", open_cnt)
-    st.metric("Closed", len(valves) - open_cnt)
-
-    st.markdown("---")
-    if st.button("Start Drawing", use_container_width=True):
-        st.session_state.drawing = True
-        st.session_state.start_point = None
-        st.rerun()
-    if st.button("Stop Drawing", use_container_width=True):
-        st.session_state.drawing = False
-        st.session_state.start_point = None
-        st.rerun()
-
-# === MAIN ===
-st.title("P&ID – Click to Draw Flow (TESTED)")
-
-col_img, col_info = st.columns([3,1])
-
-# === LOAD BASE IMAGE ===
-try:
-    base = Image.open(PID_FILE).convert("RGBA")
-except:
-    st.error(f"Missing {PID_FILE}")
-    base = Image.new("RGBA", (1200, 800), (240,240,240,255))
-
-# === DRAW CANVAS ===
-canvas = base.copy()
-draw = ImageDraw.Draw(canvas)
-font = ImageFont.load_default()
-
-# Draw valves
-for tag, data in valves.items():
-    x, y = data["x"], data["y"]
-    col = (0,255,0,255) if st.session_state.valve_states.get(tag, False) else (255,0,0,255)
-    draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
-    draw.text((x+15, y-15), tag, fill="white", font=font)
-
-# === CLICK HANDLING ===
-if st.session_state.drawing:
-    # Save current canvas
-    buf = io.BytesIO()
-    canvas.save(buf, "PNG")
-    img_b64 = buf.getvalue().hex()
-
-    # HTML with click handler
-    html = f"""
-    <div style="position:relative;">
-        <img src="data:image/png;base64,{img_b64}" 
-             style="max-width:100%; cursor:crosshair;"
-             id="clickable-img">
-    </div>
-    <script>
-        document.getElementById('clickable-img').onclick = function(e) {{
-            const rect = this.getBoundingClientRect();
-            const x = Math.round(e.clientX - rect.left);
-            const y = Math.round(e.clientY - rect.top);
-            const scaleX = this.naturalWidth / this.clientWidth;
-            const scaleY = this.naturalHeight / this.clientHeight;
-            const px = Math.round(x * scaleX);
-            const py = Math.round(y * scaleY);
-            const url = new URL(window.location);
-            url.searchParams.set('click', px + ',' + py);
-            window.location = url;
-        }};
-    </script>
-    """
-    st.components.v1.html(html, height=base.height)
-
-    # Read click
-    params = st.experimental_get_query_params()
-    click = params.get("click", [None])[0]
-    if click:
+    if LINES_FILE.endswith(".svg"):
+        import xml.etree.ElementTree as ET
         try:
-            x, y = map(int, click.split(","))
-            if st.session_state.start_point is None:
-                st.session_state.start_point = (x, y)
-                st.success(f"Start: ({x}, {y})")
-            else:
-                p1 = st.session_state.start_point
-                p2 = (x, y)
-                st.session_state.user_lines.append({"p1": p1, "p2": p2})
-                st.session_state.start_point = None
-                st.success(f"Line: {p1} → {p2}")
-            st.experimental_set_query_params()
-            st.rerun()
-        except:
-            st.experimental_set_query_params()
-            st.rerun()
-else:
-    buf = io.BytesIO()
-    canvas.save(buf, "PNG")
-    st.image(buf.getvalue(), use_container_width=True)
-
-# === DRAW START POINT ===
-if st.session_state.start_point:
-    sx, sy = st.session_state.start_point
-    draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
-
-# === DRAW LINES + FLOW ===
-for line in st.session_state.user_lines:
-    p1, p2 = line["p1"], line["p2"]
-    up = nearest_valve(p1)
-    down = nearest_valve(p2)
-    flow = up and down and st.session_state.valve_states.get(up, False) and st.session_state.valve_states.get(down, False)
-    col = (0, 255, 0, 220) if flow else (255, 0, 0, 180)
-    draw.line([p1, p2], fill=col, width=8)
-    if flow:
-        dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-        for i in range(3):
-            t = (time.time() * 0.6 + i * 0.33) % 1
-            ax = p1[0] + dx * t
-            ay = p1[1] + dy * t
-            angle = math.atan2(dy, dx)
-            a_len = 14
-            pts = [
-                (ax, ay),
-                (ax - a_len * math.cos(angle - 0.5), ay - a_len * math.sin(angle - 0.5)),
-                (ax - a_len * math.cos(angle + 0.5), ay - a_len * math.sin(angle + 0.5))
-            ]
-            draw.polygon(pts, fill=(0, 200, 0))
-
-# === DISPLAY FINAL IMAGE ===
-buf = io.BytesIO()
-canvas.convert("RGB").save(buf, "PNG")
-st.image(buf.getvalue(), use_container_width=True)
-
-# === RIGHT PANEL ===
-with col_info:
-    st.header("Lines")
-    if st.session_state.user_lines:
-        for i, ln in enumerate(st.session_state.user_lines):
-            p1, p2 = ln["p1"], ln["p2"]
-            up = nearest_valve(p1)
-            down = nearest_valve(p2)
-            status = "Flow" if (up and down and 
-                                st.session_state.valve_states.get(up, False) and 
-                                st.session_state.valve_states.get(down, False)) else "Blocked"
-            st.write(f"**Line {i+1}**: {status}")
-            st.caption(f"{p1} → {p2}\nUp: {up or '—'} | Down: {down or '—'}")
-            if st.button("Delete", key=f"del_{i}"):
-                st.session_state.user_lines.pop(i)
-                st.rerun()
+            tree = ET.parse(LINES_FILE)
+            root = tree.getroot()
+            ns = {'svg': 'http://www.w3.org/2000/svg'}
+            lines = []
+            for line in root.findall('.//svg:line', ns):
+                try:
+                    x1 = int(float(line.get('x1', 0)))
+                    y1 = int(float(line.get('y1', 0)))
+                    x2 = int(float(line.get('x2', 0)))
+                    y2 = int(float(line.get('y2', 0)))
+                    if (x1, y1) != (x2, y2):
+                        lines.append({"x1": x1, "y1": y1, "x2": x2, "y2": y2})
+                except:
+                    pass
+            return lines
+        except Exception as e:
+            st.error(f"SVG parse error: {e}")
+            return []
     else:
-        st.info("Click **Start Drawing** and click two points.")
-
-# === HELPER ===
-def nearest_valve(point, max_dist=60):
-    x0, y0 = point
-    best = None
-    best_d = float('inf')
-    for tag, data in valves.items():
-        d = math.hypot(data["x"] - x0, data["y"] - y0)
-        if d < best_d and d <= max_dist:
-            best_d = d
-            best = tag
-    return best
+        try:
+            with open(LINES_FILE) as f:
+                data = json.load(f)
+            return data.get("lines", data) if isinstance(data, dict) else data
+        except Exception as e:
+            st.error(f"JSON error: {e}")
+            return []
