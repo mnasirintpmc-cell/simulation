@@ -29,8 +29,13 @@ def save_pipes(pipes_data):
 def create_pid_with_pipes():
     """Create P&ID display with pipes and valves"""
     try:
-        # Load the actual P&ID image
-        pid_img = Image.open(PID_FILE).convert("RGBA")
+        # Try to load the actual P&ID image first
+        try:
+            pid_img = Image.open(PID_FILE).convert("RGBA")
+        except:
+            # If no P&ID image, create a white background
+            pid_img = Image.new("RGBA", (1200, 800), (255, 255, 255, 255))
+        
         draw = ImageDraw.Draw(pid_img)
         
         # Load data
@@ -61,7 +66,7 @@ def create_pid_with_pipes():
                 draw.ellipse([x1-4, y1-4, x1+4, y1+4], fill=(255, 0, 0))  # Red dot start
                 draw.ellipse([x2-4, y2-4, x2+4, y2+4], fill=(0, 255, 0))  # Green dot end
         
-        # Draw valves with smaller sizes
+        # Draw valves with ORIGINAL SMALLER sizes
         for tag, data in valves.items():
             x, y = data["x"], data["y"]
             current_state = st.session_state.valve_states.get(tag, False)
@@ -69,10 +74,10 @@ def create_pid_with_pipes():
             # Bright colors for valves
             valve_color = (0, 255, 0) if current_state else (255, 0, 0)  # Green/Red
             
-            # Smaller valve indicators
+            # ORIGINAL SMALLER valve indicators (16px diameter instead of 30px)
             draw.ellipse([x-8, y-8, x+8, y+8], fill=valve_color, outline="black", width=2)
             
-            # Draw valve tag
+            # Draw valve tag with background
             draw.text((x+10, y-6), tag, fill="black")
         
         return pid_img.convert("RGB")
