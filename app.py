@@ -33,6 +33,8 @@ if "drawing" not in st.session_state:
     st.session_state.drawing = False
 if "start_point" not in st.session_state:
     st.session_state.start_point = None
+if "mouse_pos" not in st.session_state:
+    st.session_state.mouse_pos = None
 
 # === SIDEBAR ===
 with st.sidebar:
@@ -76,89 +78,75 @@ except:
     st.error(f"Missing {PID_FILE}")
     base = Image.new("RGBA", (1200, 800), (240,240,240,255))
 
-# === CLICKABLE IMAGE (ROBUST) ===
+# === CLICKABLE IMAGE (FIXED JS) ===
 def clickable_image():
     buffered = io.BytesIO()
     base.save(buffered, format="PNG")
     b64 = buffered.getvalue().hex()
 
-    html = f"""
-    <div id="clickable-container" style="position:relative; display:inline-block;">
-        <img src="data:image/png;base64,{b64}" id="pid-img" style="max-width:100%;">
-        <canvas id="overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;"></canvas>
+    html = """
+    <div style="position:relative; display:inline-block;">
+        <img src="data:image/png;base64,""" + b64 + """ " id="pid-img" style="max-width:100%;">
+        <div id="click-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;" 
+             onclick="handleClick(event)" onmousemove="trackMouse(event)"></div>
     </div>
     <script>
         const img = document.getElementById('pid-img');
-        const canvas = document.getElementById('overlay');
-        const ctx = canvas.getContext('2d');
-        
-        function resize() {{
-            canvas.width = img.clientWidth;
-            canvas.height = img.clientHeight;
-        }}
-        resize();
-        window.addEventListener('resize', resize);
+        const layer = document.getElementById('click-layer');
 
-        function getScaled(x, y) {{
-            const rect = canvas.getBoundingClientRect();
+        function getScaled(px, py) {
+            const rect = img.getBoundingClientRect();
             const scaleX = img.naturalWidth / rect.width;
             const scaleY = img.naturalHeight / rect.height;
-            return {{x: Math.round(x * scaleX), y: Math.round(y * scaleY)}};
-        }}
+            return {x: Math.round(px * scaleX), y: Math.round(py * scaleY)};
+        }
 
-        canvas.addEventListener('click', (e) => {{
-            const rect = canvas.getBoundingClientRect();
+        function handleClick(e) {
+            const rect = layer.getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
             const scaled = getScaled(px, py);
-            window.parent.postMessage({{type: 'streamlit:setComponentValue', value: [scaled]}}, '*');
-        }});
+            window.parent.postMessage({type: 'streamlit:setComponentValue', value: [scaled]}, '*');
+        }
 
-        canvas.addEventListener('mousemove', (e) => {{
-            const rect = canvas.getBoundingClientRect();
+        function trackMouse(e) {
+            const rect = layer.getBoundingClientRect();
             const px = e.clientX - rect.left;
             const py = e.clientY - rect.top;
             const scaled = getScaled(px, py);
-            window.parent.postMessage({{type: 'streamlit:mouse', value: scaled}}, '*');
-        }});
+            window.parent.postMessage({type: 'streamlit:mouse', value: scaled}, '*');
+        }
     </script>
     """
-    return st.components.v1.html(html, height=base.height + 50, key="clickable_img")
+    return st.components.v1.html(html, height=base.height, key="clickable")
 
 # === CAPTURE CLICK & MOUSE ===
 click_data = None
-mouse_pos = None
+mouse_data = None
 
 if st.session_state.drawing:
-    result = clickable_image()
-    # result is None, but messages come via postMessage
-    # We use a workaround with st.session_state
-    pass  # click handled below
-
-# === READ MESSAGES (Streamlit hack) ===
-if st.session_state.drawing:
-    try:
-        msg = st._get_message()
-        if msg and msg.get("type") == "streamlit:setComponentValue":
+    clickable_image()
+    # Read messages
+    msg = st._get_message()
+    if msg:
+        if msg.get("type") == "streamlit:setComponentValue":
             click_data = msg["value"]
-        elif msg and msg.get("type") == "streamlit:mouse":
-            mouse_pos = msg["value"]
-    except:
-        pass
+        elif msg.get("type") == "streamlit:mouse":
+            mouse_data = msg["value"]
 
 # === PROCESS CLICK ===
 if click_data and st.session_state.drawing:
     x, y = click_data[0]["x"], click_data[0]["y"]
     if st.session_state.start_point is None:
         st.session_state.start_point = (x, y)
-        st.success(f"Start: ({x}, {y})")
+        st.success(f"Start point: ({x}, {y})")
         st.rerun()
     else:
         p1 = st.session_state.start_point
         p2 = (x, y)
         st.session_state.user_lines.append({"p1": p1, "p2": p2})
         st.session_state.start_point = None
-        st.success(f"Line: {p1} to {p2}")
+        st.success(f"Line locked: {p1} → {p2}")
         st.rerun()
 
 # === DRAW CANVAS ===
@@ -178,13 +166,10 @@ if st.session_state.start_point:
     sx, sy = st.session_state.start_point
     draw.ellipse([sx-16, sy-16, sx+16, sy+16], fill=(255,0,0,200), outline="red", width=4)
 
-    # Preview line
-    if mouse_pos:
-        mx, my = mouse_pos["x"], mouse_pos["y"]
+    # Preview line to mouse
+    if mouse_data:
+        mx, my = mouse_data["x"], mouse_data["y"]
         draw.line([(sx, sy), (mx, my)], fill=(100,100,255,180), width=6)
-    else:
-        cx, cy = base.width // 2, base.height // 2
-        draw.line([(sx, sy), (cx, cy)], fill=(100,100,255,180), width=6)
 
 # Draw user lines + flow
 for line in st.session_state.user_lines:
@@ -231,7 +216,7 @@ with col_info:
                                 st.session_state.valve_states.get(up, False) and 
                                 st.session_state.valve_states.get(down, False)) else "Blocked"
             st.write(f"**Line {i+1}**: {status}")
-            st.caption(f"{p1} to {p2}\nUp: {up or '—'} | Down: {down or '—'}")
+            st.caption(f"{p1} → {p2}\nUp: {up or '—'} | Down: {down or '—'}")
             if st.button("Delete", key=f"del_{i}"):
                 st.session_state.user_lines.pop(i)
                 st.rerun()
