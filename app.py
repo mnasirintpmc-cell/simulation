@@ -93,12 +93,12 @@ with col1:
     if st.session_state.animation_running:
         # Animation placeholder
         placeholder = st.empty()
-        st.markdown("*Animation running: Flow along pipes, buffer flicker, gas bubbles.*")
+        st.markdown("*Animation running: Process flow L→R, gas bubbles upward.*")
     else:
         # Static display
         try:
             static_img = Image.open(PID_FILE).convert("RGB")
-            st.image(static_img, use_container_width=True, caption="Static P&ID - Click 'Start Animation' to animate")
+            st.image(static_img, use_container_width=True, caption="Static P&ID - Click 'Start Animation' to see flow")
         except:
             st.error("P&ID.png not found")
 
@@ -118,7 +118,7 @@ with col2:
                 st.session_state.valve_states[tag] = not current_state
                 st.rerun()
 
-# Animation function (PIL-based, pipe-aware)
+# Animation function (tailored to tandem seal: horizontal process flow, vertical gas)
 def create_animated_frame(t):
     try:
         pid_img = Image.open(PID_FILE).convert("RGBA")
@@ -143,56 +143,57 @@ def create_animated_frame(t):
         draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
         draw.text((x+12, y-10), tag, fill="white", font=font)
     
-    # Pipe flow (horizontal along main line y=350, only through open valves)
-    pipe_y = 350  # Your PNG's main pipe centerline
+    # Main process flow: Horizontal dashes along y=350 (your pipe centerline), only past open valves
+    pipe_y = 350
+    flow_speed = 30  # Slower for realism
     for tag, data in valves.items():
-        if st.session_state.valve_states[tag]:
+        if st.session_state.valve_states[tag]:  # Only if this valve open
             vx, vy = data["x"], data["y"]
-            # Flow particles: 3 dashes moving right from valve
-            for i in range(3):
-                offset = (int(t * 50 + i * 80) % 400)  # Speed + spacing
+            # Start flow after valve; multiple particles for continuous look
+            for i in range(4):  # 4 particles per valve
+                offset = (int(t * flow_speed + i * 60) % 500)  # Cycle length 500px
                 fx = vx + offset
-                if 0 < fx < 1200:  # Within image bounds
-                    # Green flow dash (pipe-style)
-                    draw.rectangle([fx, pipe_y-2, fx+30, pipe_y+2], fill=(0, 200, 0, 200))
+                if vx < fx < 1200:  # Flow right, within bounds
+                    # Green dash (pipe flow style)
+                    draw.rectangle([fx, pipe_y-3, fx+20, pipe_y+3], fill=(0, 200, 0, 200))
+                    # Small arrowhead
+                    draw.polygon([(fx+20, pipe_y-2), (fx+25, pipe_y), (fx+20, pipe_y+2)], fill=(0, 150, 0, 220))
     
-    # Buffer pot flicker (small level at ~400,250 per your PNG)
-    buffer_x, buffer_y = 400, 250
-    flicker = int(20 + 10 * (t % 2))  # Subtle 20-30px height pulse
-    draw.rectangle([buffer_x, buffer_y - flicker, buffer_x+40, buffer_y], fill=(135, 206, 250, 180))
-    draw.rectangle([buffer_x, buffer_y - 50, buffer_x+40, buffer_y], outline="blue", width=2)
-    
-    # Barrier gas bubbles (upward from top valves, e.g., V-103/V-104 ~ y=200)
+    # Barrier gas: Upward bubbles from gas supply valves (V-601/V-602 at bottom, but rise up; y<400 for top lines)
+    bubble_speed = 20
     for tag, data in valves.items():
-        if st.session_state.valve_states[tag] and data["y"] < 300:  # Top line valves
+        if st.session_state.valve_states[tag] and data["y"] > 400:  # Bottom gas valves (V-601 etc.)
             vx, vy = data["x"], data["y"]
-            bubble_offset = int(t * 30) % 100
-            by = vy - 20 - bubble_offset
-            if by > 0:
-                draw.ellipse([vx-5, by-5, vx+5, by+5], fill=(173, 216, 230, 150))
+            for i in range(2):  # 2 bubbles per valve
+                bubble_offset = (int(t * bubble_speed + i * 40) % 200)
+                by = vy - bubble_offset  # Rise upward
+                if by > 100:  # Within diagram
+                    # Light blue bubble
+                    draw.ellipse([vx-4, by-4, vx+4, by+4], fill=(173, 216, 230, 180))
+                    draw.ellipse([vx-2, by-2, vx+2, by+2], fill=(135, 206, 250, 220))  # Inner glow
     
     return pid_img.convert("RGB")
 
-# Run animation if toggled
+# Run animation if toggled (8s demo loop for Cloud)
 if st.session_state.animation_running:
     start_time = time.time()
     anim_placeholder = st.empty()
     
-    while time.time() - start_time < 10:  # 10s loop, then stop (Cloud-friendly)
-        t = time.time() % 10  # Cycle time
+    while time.time() - start_time < 8:
+        t = time.time() % 8  # Cycle time
         frame = create_animated_frame(t)
         
         buf = io.BytesIO()
         frame.save(buf, format="PNG")
-        anim_placeholder.image(buf.getvalue(), use_container_width=True, caption=f"Frame t={t:.1f}s")
+        anim_placeholder.image(buf.getvalue(), use_container_width=True, caption=f"Tandem Seal Flow | t={t:.1f}s")
         
-        time.sleep(0.1)  # 10 FPS
+        time.sleep(0.2)  # 5 FPS for smooth, non-CPU-heavy
     
     st.session_state.animation_running = False
-    st.success("Animation complete! Toggle valves and restart for changes.")
+    st.success("Animation demo complete! Toggle valves and restart to see changes.")
     st.rerun()
 
-# Instructions (your original)
+# Instructions (updated for tandem seal)
 st.markdown("---")
 st.markdown("### 📋 Instructions")
 col1, col2, col3 = st.columns(3)
@@ -201,15 +202,15 @@ with col1:
     st.markdown("- 🟢 Green = Valve OPEN")
     st.markdown("- 🔴 Red = Valve CLOSED")
 with col2:
-    st.markdown("**Controls:**")
-    st.markdown("- Use left sidebar to toggle valves")
-    st.markdown("- Click 'Start Animation' to see flow")
-    st.markdown("- Changes update on rerun")
+    st.markdown("**Flow Animation:**")
+    st.markdown("- Green dashes/arrows: Process fluid L→R")
+    st.markdown("- Blue bubbles: Barrier gas upward")
+    st.markdown("- Only through open valves")
 with col3:
-    st.markdown("**Notes:**")
-    st.markdown("- Flow follows main pipe (left→right)")
-    st.markdown("- Buffer flickers on any open valve")
-    st.markdown("- Gas bubbles from top barriers")
+    st.markdown("**Controls:**")
+    st.markdown("- Sidebar toggles update live")
+    st.markdown("- 'Start Animation' for 8s demo")
+    st.markdown("- Restart after changes")
 
 # Debug
 with st.expander("🔧 Debug Information"):
@@ -218,3 +219,7 @@ with st.expander("🔧 Debug Information"):
     st.write("**Current States:**")
     st.json(st.session_state.valve_states)
     st.write(f"**Total Valves:** {len(valves)}")
+
+# Footer note
+st.markdown("---")
+st.caption("Tandem Seal Simulation: Buffer gas flow through primary/secondary seals.")
