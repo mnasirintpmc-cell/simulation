@@ -46,19 +46,25 @@ def create_pid_with_pipes():
         for i, pipe in enumerate(pipes):
             x1, y1, x2, y2 = pipe["x1"], pipe["y1"], pipe["x2"], pipe["y2"]
             
-            # Highlight selected pipe
+            # Highlight selected pipe with VIOLET and thicker line
             if st.session_state.get("selected_pipe") == i:
-                pipe_color = (255, 165, 0)  # Orange for selected
-                pipe_width = 10
+                pipe_color = (148, 0, 211)  # VIOLET for selected pipe
+                pipe_width = 12  # Extra thick for selected pipe
             else:
-                pipe_color = (0, 0, 255)  # Bright blue
+                pipe_color = (0, 0, 255)  # Bright blue for normal pipes
                 pipe_width = 8
             
             draw.line([(x1, y1), (x2, y2)], fill=pipe_color, width=pipe_width)
             
-            # Draw pipe endpoints for easier selection
-            draw.ellipse([x1-4, y1-4, x1+4, y1+4], fill=(255, 0, 0))  # Red dot start
-            draw.ellipse([x2-4, y2-4, x2+4, y2+4], fill=(0, 255, 0))  # Green dot end
+            # Draw pipe endpoints - RED for selected pipe, normal colors for others
+            if st.session_state.get("selected_pipe") == i:
+                # RED endpoints for selected pipe
+                draw.ellipse([x1-6, y1-6, x1+6, y1+6], fill=(255, 0, 0), outline="white", width=2)
+                draw.ellipse([x2-6, y2-6, x2+6, y2+6], fill=(255, 0, 0), outline="white", width=2)
+            else:
+                # Normal colors for unselected pipes
+                draw.ellipse([x1-4, y1-4, x1+4, y1+4], fill=(255, 0, 0))  # Red dot start
+                draw.ellipse([x2-4, y2-4, x2+4, y2+4], fill=(0, 255, 0))  # Green dot end
         
         # Draw valves with ORIGINAL SMALLER sizes
         for tag, data in valves.items():
@@ -161,6 +167,7 @@ if st.session_state.selected_pipe is not None:
     pipe_index = st.session_state.selected_pipe
     with st.form(f"edit_pipe_{pipe_index}"):
         st.subheader(f"Edit Pipe {pipe_index + 1}")
+        st.info("🔮 **VIOLET pipe with RED endpoints = Currently Selected**")
         col1, col2 = st.columns(2)
         
         with col1:
@@ -182,7 +189,7 @@ if st.session_state.selected_pipe is not None:
 # Display the P&ID with pipes
 st.header("🎯 P&ID Display")
 composite_img = create_pid_with_pipes()
-st.image(composite_img, use_container_width=True, caption="Orange pipe = Selected | Red dot = Start | Green dot = End")
+st.image(composite_img, use_container_width=True, caption="🔮 VIOLET pipe with RED endpoints = Selected | Blue pipes = Normal | Red/Green dots = Pipe endpoints")
 
 # Valve controls in sidebar
 with st.sidebar:
@@ -201,9 +208,10 @@ with st.sidebar:
     st.header("📊 Pipe Info")
     if st.session_state.selected_pipe is not None:
         pipe = pipes[st.session_state.selected_pipe]
-        st.write(f"**Selected Pipe {st.session_state.selected_pipe + 1}:**")
+        st.success(f"**Selected Pipe {st.session_state.selected_pipe + 1}:**")
         st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
         st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
+        st.write("🔮 **VIOLET with RED endpoints**")
     else:
         st.write("No pipe selected")
 
