@@ -1,164 +1,122 @@
 import streamlit as st
 import json
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 import os
+import time
+import io
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Animated P&ID")
 
-# Configuration
+# === CONFIG ===
 PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
+FRAME_DELAY = 0.1  # Animation speed (seconds)
 
+# === LOAD VALVES ===
 def load_valves():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
             return json.load(f)
     return {}
 
-def create_pid_with_valves():
-    """Create P&ID image with valve indicators"""
-    try:
-        pid_img = Image.open(PID_FILE).convert("RGBA")
-        draw = ImageDraw.Draw(pid_img)
-        
-        for tag, data in valves.items():
-            x, y = data["x"], data["y"]
-            current_state = st.session_state.valve_states[tag]
-            
-            # Choose color based on valve state
-            color = (0, 255, 0) if current_state else (255, 0, 0)
-            
-            # Draw valve indicator
-            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
-            draw.text((x+12, y-10), tag, fill="white", stroke_fill="black", stroke_width=1)
-            
-        return pid_img.convert("RGB")
-    except Exception as e:
-        st.error(f"Error creating P&ID image: {e}")
-        try:
-            return Image.open(PID_FILE).convert("RGB")
-        except:
-            return Image.new("RGB", (800, 600), (255, 255, 255))
-
-# Load valve data
 valves = load_valves()
 
-# Initialize session state for current states
-if "valve_states" not in st.session_state:
-    st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
-
-# Main app
-st.title("P&ID Interactive Simulation")
-
 if not valves:
-    st.error("No valves found in valves.json. Please check your configuration.")
+    st.error("No valves found in valves.json")
     st.stop()
 
-# Create sidebar for valve controls
+# === SESSION STATE ===
+if "valve_states" not in st.session_state:
+    st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
+if "animation_time" not in st.session_state:
+    st.session_state.animation_time = 0
+
+# === SIDEBAR CONTROLS ===
 with st.sidebar:
-    st.header("🎯 Valve Controls")
-    st.markdown("---")
-    
-    # Valve toggle buttons in sidebar
+    st.header("Valve Controls")
     for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        
-        # Create colored button based on state
-        if current_state:
-            button_label = f"🔴 {tag} - OPEN"
-            button_type = "primary"
-        else:
-            button_label = f"🟢 {tag} - CLOSED" 
-            button_type = "secondary"
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button(button_label, key=f"btn_{tag}", use_container_width=True, type=button_type):
-                st.session_state.valve_states[tag] = not current_state
-                st.rerun()
-        with col2:
-            status = "🟢" if current_state else "🔴"
-            st.write(status)
-    
-    st.markdown("---")
-    
-    # Current status summary in sidebar
-    st.subheader("📊 Current Status")
-    open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
-    closed_valves = len(valves) - open_valves
-    
-    st.metric("Open Valves", open_valves)
-    st.metric("Closed Valves", closed_valves)
-    
-    st.markdown("---")
-    
-    # Quick actions
-    st.subheader("⚡ Quick Actions")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Open All", use_container_width=True):
-            for tag in valves:
-                st.session_state.valve_states[tag] = True
-            st.rerun()
-    with col2:
-        if st.button("Close All", use_container_width=True):
-            for tag in valves:
-                st.session_state.valve_states[tag] = False
+        current = st.session_state.valve_states[tag]
+        label = f"{'OPEN' if current else 'CLOSED'} {tag}"
+        color = "primary" if current else "secondary"
+        if st.button(label, key=tag, use_container_width=True, type=color):
+            st.session_state.valve_states[tag] = not current
             st.rerun()
 
-# Main content area - P&ID display
-col1, col2 = st.columns([3, 1])
-with col1:
-    # Create and display the P&ID with valve indicators
-    composite_img = create_pid_with_valves()
-    st.image(composite_img, use_container_width=True, caption="Interactive P&ID - Valves update in real-time")
-
-with col2:
-    # Right sidebar for detailed status
-    st.header("🔍 Valve Details")
     st.markdown("---")
+    st.metric("Open", sum(st.session_state.valve_states.values()))
+    st.metric("Closed", len(valves) - sum(st.session_state.valve_states.values()))
+
+# === MAIN ANIMATION LOOP ===
+st.title("Animated P&ID Simulation")
+placeholder = st.empty()
+
+# Load base image once
+try:
+    base_img = Image.open(PID_FILE).convert("RGBA")
+except:
+    base_img = Image.new("RGBA", (1200, 800), (240, 240, 240))
+
+# Try to load a font
+try:
+    font = ImageFont.truetype("arial.ttf", 16)
+except:
+    font = ImageFont.load_default()
+
+# Animation loop
+while True:
+    frame = base_img.copy()
+    draw = ImageDraw.Draw(frame)
     
+    t = st.session_state.animation_time
+    st.session_state.animation_time += FRAME_DELAY
+
+    # === DRAW VALVES ===
     for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        status = "🟢 OPEN" if current_state else "🔴 CLOSED"
-        
-        with st.expander(f"{tag} - {status}", expanded=False):
-            st.write(f"**Position:** ({data['x']}, {data['y']})")
-            st.write(f"**Current State:** {status}")
-            
-            # Mini toggle inside expander
-            if st.button(f"Toggle {tag}", key=f"mini_{tag}", use_container_width=True):
-                st.session_state.valve_states[tag] = not current_state
-                st.rerun()
+        x, y = data["x"], data["y"]
+        state = st.session_state.valve_states[tag]
+        color = (0, 255, 0, 200) if state else (255, 0, 0, 200)
+        draw.ellipse([x-12, y-12, x+12, y+12], fill=color, outline="white", width=2)
+        draw.text((x+15, y-15), tag, fill="white", font=font)
 
-# Bottom section for additional info
-st.markdown("---")
-st.markdown("### 📋 Instructions")
-col1, col2, col3 = st.columns(3)
+    # === ANIMATED FLOW (only if valve open) ===
+    for tag, data in valves.items():
+        if st.session_state.valve_states[tag]:
+            x, y = data["x"], data["y"]
+            # Flow arrow moving right from valve
+            offset = (int(t * 100) % 200) - 100
+            fx = x + 30 + offset
+            if 0 < fx < 1000:
+                draw.polygon([
+                    (fx, y), (fx+20, y-8), (fx+20, y+8)
+                ], fill=(0, 200, 0, 220))
 
-with col1:
-    st.markdown("**Valve Colors:**")
-    st.markdown("- 🟢 Green = Valve OPEN")
-    st.markdown("- 🔴 Red = Valve CLOSED")
+    # === ANIMATED TANK LEVEL (example at fixed position) ===
+    tank_x, tank_y = 300, 500
+    level_height = 50 + 40 * abs((t % 2) - 1) * 100  # Oscillate 50–150
+    draw.rectangle([tank_x, tank_y - level_height, tank_x+80, tank_y], fill=(0, 100, 255, 180))
+    draw.rectangle([tank_x, tank_y - 160, tank_x+80, tank_y], outline="black", width=3)
 
-with col2:
-    st.markdown("**Controls:**")
-    st.markdown("- Use left sidebar to toggle valves")
-    st.markdown("- Click valve details for more info")
-    st.markdown("- Use quick actions for bulk operations")
+    # === SPINNING PUMP (example) ===
+    pump_x, pump_y = 600, 500
+    angle = t * 6  # 60 RPM
+    points = []
+    for i in range(6):
+        a = angle + i * 60
+        r = 25
+        px = pump_x + r * (1 if i % 2 == 0 else 0.7) * (1 if a % 180 < 90 else -1)
+        py = pump_y + r * (1 if i % 2 == 0 else 0.7) * (1 if a % 180 > 90 else -1)
+        points.extend([px, py])
+    draw.polygon(points, fill=(0, 150, 255, 220))
 
-with col3:
-    st.markdown("**Notes:**")
-    st.markdown("- Valve positions are fixed")
-    st.markdown("- Changes are temporary")
-    st.markdown("- No file modifications")
+    # === ALARM FLASH (if any valve open and level high) ===
+    if any(st.session_state.valve_states.values()) and level_height > 120:
+        alpha = 255 if int(t * 10) % 2 == 0 else 100
+        draw.ellipse([900, 100, 940, 140], fill=(255, 0, 0, alpha))
 
-# Debug information
-with st.expander("🔧 Debug Information"):
-    st.write("**Loaded Valves Configuration:**")
-    st.json(valves)
-    
-    st.write("**Current Valve States:**")
-    st.json(st.session_state.valve_states)
-    
-    st.write(f"**Total Valves:** {len(valves)}")
+    # Convert to RGB and display
+    frame_rgb = frame.convert("RGB")
+    buf = io.BytesIO()
+    frame_rgb.save(buf, format="PNG")
+    placeholder.image(buf.getvalue(), use_container_width=True)
+
+    time.sleep(FRAME_DELAY)
