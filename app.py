@@ -33,8 +33,6 @@ if "drawing" not in st.session_state:
     st.session_state.drawing = False
 if "start_point" not in st.session_state:
     st.session_state.start_point = None
-if "mouse_pos" not in st.session_state:
-    st.session_state.mouse_pos = None
 
 # === SIDEBAR ===
 with st.sidebar:
@@ -78,15 +76,15 @@ except:
     st.error(f"Missing {PID_FILE}")
     base = Image.new("RGBA", (1200, 800), (240,240,240,255))
 
-# === CLICKABLE IMAGE (NO RETURN) ===
+# === CLICKABLE IMAGE (FIXED JS – ESCAPED {{}}) ===
 def clickable_image():
     buffered = io.BytesIO()
     base.save(buffered, format="PNG")
     b64 = buffered.getvalue().hex()
 
-    html = f"""
+    html = r"""
     <div style="position:relative; display:inline-block;">
-        <img src="data:image/png;base64,{b64}" id="pid-img" style="max-width:100%;">
+        <img src="data:image/png;base64,""" + b64 + r""" " id="pid-img" style="max-width:100%;">
         <div id="click-layer" style="position:absolute; top:0; left:0; width:100%; height:100%; cursor:crosshair;"
              onclick="handleClick(event)" onmousemove="trackMouse(event)"></div>
     </div>
@@ -116,7 +114,7 @@ def clickable_image():
     """
     st.components.v1.html(html, height=base.height, key="clickable")
 
-# === SHOW CLICKABLE IMAGE (only when drawing) ===
+# === SHOW IMAGE ===
 if st.session_state.drawing:
     clickable_image()
 
@@ -125,26 +123,29 @@ click_data = None
 mouse_pos = None
 
 if st.session_state.drawing:
-    msg = st._get_message()
-    if msg:
-        if msg.get("type") == "streamlit:setComponentValue":
-            click_data = msg["value"]
-        elif msg.get("type") == "streamlit:mouse":
-            mouse_pos = msg["value"]
+    try:
+        msg = st._get_message()
+        if msg:
+            if msg.get("type") == "streamlit:setComponentValue":
+                click_data = msg["value"]
+            elif msg.get("type") == "streamlit:mouse":
+                mouse_pos = msg["value"]
+    except:
+        pass
 
 # === PROCESS CLICK ===
 if click_data and st.session_state.drawing:
     x, y = click_data[0]["x"], click_data[0]["y"]
     if st.session_state.start_point is None:
         st.session_state.start_point = (x, y)
-        st.success(f"Start point: ({x}, {y})")
+        st.success(f"Start: ({x}, {y})")
         st.rerun()
     else:
         p1 = st.session_state.start_point
         p2 = (x, y)
         st.session_state.user_lines.append({"p1": p1, "p2": p2})
         st.session_state.start_point = None
-        st.success(f"Line locked: {p1} to {p2}")
+        st.success(f"Line: {p1} to {p2}")
         st.rerun()
 
 # === DRAW CANVAS ===
@@ -202,7 +203,7 @@ st.image(buf.getvalue(), use_container_width=True)
 
 # === RIGHT PANEL ===
 with col_info:
-    st.header("Drawn Lines")
+    st.header("Lines")
     if st.session_state.user_lines:
         for i, ln in enumerate(st.session_state.user_lines):
             p1, p2 = ln["p1"], ln["p2"]
