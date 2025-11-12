@@ -2,262 +2,257 @@ import streamlit as st
 import json
 from PIL import Image, ImageDraw, ImageFont
 import os
-import time
 import io
+import time
 import math
 
+# --------------------------------------------------------------
+# CONFIG
+# --------------------------------------------------------------
 st.set_page_config(layout="wide")
 PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
 
-# Load valves safely
+# --------------------------------------------------------------
+# LOAD VALVES (force boolean state)
+# --------------------------------------------------------------
 def load_valves():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f:
                 return json.load(f)
         except Exception as e:
-            st.error(f"Error loading valves.json: {e}")
-            return {}
+            st.error(f"valves.json error: {e}")
     return {}
 
 valves = load_valves()
 if not valves:
-    st.error("No valves found in valves.json")
+    st.error("No valves in valves.json – add at least two valves.")
     st.stop()
 
-# Session state (force booleans)
 if "valve_states" not in st.session_state:
     st.session_state.valve_states = {tag: bool(data.get("state", False)) for tag, data in valves.items()}
 
-if "animation_running" not in st.session_state:
-    st.session_state.animation_running = False
+# --------------------------------------------------------------
+# USER-DRAWN PIPE STATE
+# --------------------------------------------------------------
+if "user_lines" not in st.session_state:
+    st.session_state.user_lines = []          # list of dicts: {"p1":(x,y), "p2":(x,y), "confirmed":True}
+if "temp_line" not in st.session_state:
+    st.session_state.temp_line = None         # None or (x1,y1,x2,y2) while drawing
+if "drawing" not in st.session_state:
+    st.session_state.drawing = False
 
-# Sidebar (your original, fixed sum)
+# --------------------------------------------------------------
+# SIDEBAR – VALVE CONTROLS (your original)
+# --------------------------------------------------------------
 with st.sidebar:
-    st.header("🎯 Valve Controls")
-    st.markdown("---")
-    
+    st.header("Valve Controls")
     for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        
-        if current_state:
-            button_label = f"🔴 {tag} - OPEN"
-            button_type = "primary"
-        else:
-            button_label = f"🟢 {tag} - CLOSED"
-            button_type = "secondary"
-        
+        state = st.session_state.valve_states[tag]
+        label = f"{'OPEN' if state else 'CLOSED'} {tag}"
+        btn_type = "primary" if state else "secondary"
         col1, col2 = st.columns([3, 1])
         with col1:
-            if st.button(button_label, key=f"btn_{tag}", use_container_width=True, type=button_type):
-                st.session_state.valve_states[tag] = not current_state
+            if st.button(label, key=f"btn_{tag}", type=btn_type, use_container_width=True):
+                st.session_state.valve_states[tag] = not state
                 st.rerun()
         with col2:
-            status = "🟢" if current_state else "🔴"
-            st.write(status)
-    
+            st.write("OPEN" if state else "CLOSED")
+
     st.markdown("---")
-    
-    # Fixed: sum with count
-    st.subheader("📊 Current Status")
-    open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
-    closed_valves = len(valves) - open_valves
-    st.metric("Open Valves", open_valves)
-    st.metric("Closed Valves", closed_valves)
-    
+    open_cnt = sum(1 for v in st.session_state.valve_states.values() if v)
+    st.metric("Open Valves", open_cnt)
+    st.metric("Closed Valves", len(valves) - open_cnt)
+
     st.markdown("---")
-    
-    # Quick actions
-    st.subheader("⚡ Quick Actions")
-    col1, col2 = st.columns(2)
-    with col1:
+    colA, colB = st.columns(2)
+    with colA:
         if st.button("Open All", use_container_width=True):
-            for tag in valves:
-                st.session_state.valve_states[tag] = True
+            for t in valves: st.session_state.valve_states[t] = True
             st.rerun()
-    with col2:
+    with colB:
         if st.button("Close All", use_container_width=True):
-            for tag in valves:
-                st.session_state.valve_states[tag] = False
+            for t in valves: st.session_state.valve_states[t] = False
             st.rerun()
 
-    # Animation toggle
-    if st.button("🚀 Start/Stop Animation", use_container_width=True):
-        st.session_state.animation_running = not st.session_state.animation_running
-        if st.session_state.animation_running:
-            st.rerun()
-
-# Main app
-st.title("Tandem Seal P&ID Interactive Simulation")
-col1, col2 = st.columns([3, 1])
-
-with col1:
-    if st.session_state.animation_running:
-        placeholder = st.empty()
-        st.markdown("*Animation running: Lines color + arrows along pipes.*")
-    else:
-        # Static display
-        try:
-            static_img = Image.open(PID_FILE).convert("RGB")
-            st.image(static_img, use_container_width=True, caption="Static P&ID - Toggle valves & start animation")
-        except:
-            st.error("P&ID.png not found")
-
-with col2:
-    st.header("🔍 Valve Details")
     st.markdown("---")
-    
-    for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        status = "🟢 OPEN" if current_state else "🔴 CLOSED"
-        
-        with st.expander(f"{tag} - {status}", expanded=False):
-            st.write(f"**Position:** ({data['x']}, {data['y']})")
-            st.write(f"**Current State:** {status}")
-            
-            if st.button(f"Toggle {tag}", key=f"mini_{tag}", use_container_width=True):
-                st.session_state.valve_states[tag] = not current_state
+    if st.button("Start / Stop Drawing", use_container_width=True):
+        st.session_state.drawing = not st.session_state.drawing
+        st.session_state.temp_line = None
+        st.rerun()
+
+# --------------------------------------------------------------
+# MAIN UI
+# --------------------------------------------------------------
+st.title("P&ID – Draw Your Own Flow Path")
+col_img, col_info = st.columns([3, 1])
+
+# --------------------------------------------------------------
+# IMAGE WITH CLICK HANDLER (Streamlit native)
+# --------------------------------------------------------------
+with col_img:
+    # Load base image once
+    try:
+        base = Image.open(PID_FILE).convert("RGBA")
+    except Exception:
+        base = Image.new("RGBA", (1200, 800), (255, 255, 255, 255))
+
+    # --------------------------------------------------
+    # 1. USER CLICK → build temp line
+    # --------------------------------------------------
+    if st.session_state.drawing:
+        st.info("Click **two points** on the diagram to draw a pipe segment. "
+                "After the second click the line is locked until you **Confirm** or **Delete**.")
+        # Streamlit click detection (returns dict with x,y in *pixels* of the image)
+        click = st.experimental_get_query_params().get("click", [None])[0]
+        if click:
+            try:
+                cx, cy = map(int, click.split(","))
+            except Exception:
+                cx, cy = None, None
+        else:
+            cx, cy = None, None
+
+        if cx is not None:
+            if st.session_state.temp_line is None:
+                # first point
+                st.session_state.temp_line = (cx, cy, cx, cy)
+            else:
+                # second point → lock it
+                x1, y1, _, _ = st.session_state.temp_line
+                st.session_state.temp_line = (x1, y1, cx, cy)
+                # auto-confirm for demo (you can keep manual confirm)
+                st.session_state.user_lines.append({
+                    "p1": (x1, y1),
+                    "p2": (cx, cy),
+                    "confirmed": True
+                })
+                st.session_state.temp_line = None
                 st.rerun()
 
-# Paths (pixel-accurate from your P&ID image)
-PATHS = [
-    # Main line with 90°: V-101 → V-301 → CV-1 → CV-2 → V-105
-    {
-        "name": "Main Process Line",
-        "valves": ["V-101", "V-301", "CV-1", "CV-2", "V-105"],
-        "segments": [
-            (150, 420, 250, 420),  # V-101 to V-301 horizontal
-            (250, 420, 450, 420),  # V-301 to CV-1 horizontal
-            (450, 420, 450, 520),  # 90° down from CV-1 to CV-2 vertical
-            (450, 520, 600, 520)   # CV-2 to V-105 horizontal
-        ]
-    },
-    # Barrier gas (top down)
-    {
-        "name": "Barrier Gas",
-        "valves": ["V-601"],
-        "segments": [
-            (300, 250, 300, 420)  # V-601 down to junction
-        ]
-    },
-    # Buffer gas (bottom up)
-    {
-        "name": "Buffer Gas",
-        "valves": ["V-602"],
-        "segments": [
-            (550, 600, 550, 420)  # V-602 up to junction
-        ]
-    },
-    # Drain
-    {
-        "name": "Drain Line",
-        "valves": ["V-501"],
-        "segments": [
-            (700, 580, 850, 580)  # V-501 horizontal
-        ]
-    }
-]
+    # --------------------------------------------------
+    # 2. DRAW EVERYTHING (valves + user lines + flow colour)
+    # --------------------------------------------------
+    canvas = base.copy()
+    draw = ImageDraw.Draw(canvas)
 
-# Animation frame function
-def create_animated_frame(t):
-    try:
-        pid_img = Image.open(PID_FILE).convert("RGBA")
-    except:
-        pid_img = Image.new("RGBA", (1200, 800), (255, 255, 255))
-    
-    draw = ImageDraw.Draw(pid_img)
-    
-    # Font
-    try:
-        font = ImageFont.truetype("arial.ttf", 12)
-    except:
-        font = ImageFont.load_default()
-    
-    # Draw valves
+    # ---- draw valves (same as your original) ----
     for tag, data in valves.items():
         x, y = data["x"], data["y"]
-        current_state = st.session_state.valve_states[tag]
-        color = (0, 255, 0, 255) if current_state else (255, 0, 0, 255)
-        
-        # Valve circle
-        draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
-        draw.text((x+12, y-10), tag, fill="white", font=font)
-    
-    # Animate paths (red/green lines + arrows)
-    for path in PATHS:
-        all_open = all(st.session_state.valve_states.get(v, False) for v in path["valves"])
-        line_color = (0, 255, 0, 180) if all_open else (255, 0, 0, 180)
-        
-        for seg in path["segments"]:
-            sx, sy, ex, ey = seg
-            # Color the line
-            draw.line([(sx, sy), (ex, ey)], fill=line_color, width=8)
-            
-            if all_open:
-                # Moving arrows (3 per segment, direction-aware)
-                dx, dy = ex - sx, ey - sy
-                seg_len = math.sqrt(dx**2 + dy**2)
-                for i in range(3):
-                    offset = (int(t * 40 + i * (seg_len / 3)) % int(seg_len))
-                    fx = sx + (dx / seg_len) * offset if seg_len > 0 else sx
-                    fy = sy + (dy / seg_len) * offset if seg_len > 0 else sy
-                    
-                    # Arrow triangle (points forward)
-                    arrow_size = 12
-                    if abs(dx) > abs(dy):  # Horizontal
-                        dir_pts = [(fx, fy-6), (fx+arrow_size, fy), (fx, fy+6)] if dx > 0 else [(fx, fy+6), (fx-arrow_size, fy), (fx, fy-6)]
-                    else:  # Vertical
-                        dir_pts = [(fx-6, fy), (fx, fy+arrow_size), (fx+6, fy)] if dy > 0 else [(fx+6, fy), (fx, fy-arrow_size), (fx-6, fy)]
-                    
-                    draw.polygon(dir_pts, fill=(0, 200, 0, 255))
-    
-    return pid_img.convert("RGB")
+        col = (0, 255, 0, 255) if st.session_state.valve_states[tag] else (255, 0, 0, 255)
+        draw.ellipse([x-8, y-8, x+8, y+8], fill=col, outline="white", width=2)
+        draw.text((x+12, y-10), tag, fill="white")
 
-# Run animation
-if st.session_state.animation_running:
-    start_time = time.time()
-    anim_placeholder = st.empty()
-    
-    while time.time() - start_time < 8:  # 8s loop
-        t = time.time() - start_time
-        frame = create_animated_frame(t)
-        
-        buf = io.BytesIO()
-        frame.save(buf, format="PNG")
-        anim_placeholder.image(buf.getvalue(), use_container_width=True, caption=f"Flow Lines: Green/Red + Arrows | t={t:.1f}s")
-        
-        time.sleep(0.2)  # 5 FPS
-    
-    st.session_state.animation_running = False
-    st.success("Animation complete! Toggle valves and restart.")
-    st.rerun()
+    # ---- draw temporary line (while drawing) ----
+    if st.session_state.temp_line:
+        x1, y1, x2, y2 = st.session_state.temp_line
+        draw.line([(x1, y1), (x2, y2)], fill=(100, 100, 100, 180), width=6)
 
-# Instructions
-st.markdown("---")
-st.markdown("### 📋 Instructions")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown("**Line Colors:**")
-    st.markdown("- 🟢 Green = Flow Active")
-    st.markdown("- 🔴 Red = Blocked")
-with col2:
-    st.markdown("**Arrows:**")
-    st.markdown("- Move along pipes")
-    st.markdown("- Direction: L→R main, top→bottom gas")
-with col3:
-    st.markdown("**Controls:**")
-    st.markdown("- Sidebar toggles")
-    st.markdown("- Start animation to see")
+    # ---- draw confirmed user lines + flow logic ----
+    for line in st.session_state.user_lines:
+        p1, p2 = line["p1"], line["p2"]
+        # find nearest valves to each end
+        up_val = nearest_valve(p1)
+        down_val = nearest_valve(p2)
 
-# Debug
-with st.expander("🔧 Debug Information"):
-    st.write("**Loaded Valves:**")
-    st.json(valves)
-    st.write("**Current States:**")
-    st.json(st.session_state.valve_states)
-    st.write(f"**Total Valves:** {len(valves)}")
+        # flow = green only when BOTH valves are open
+        flow_ok = (up_val and st.session_state.valve_states.get(up_val, False) and
+                   down_val and st.session_state.valve_states.get(down_val, False))
 
-# Footer
-st.markdown("---")
-st.caption("P&ID lines now aligned with your diagram pipes.")
+        line_col = (0, 255, 0, 200) if flow_ok else (255, 0, 0, 150)
+        draw.line([p1, p2], fill=line_col, width=7)
+
+        # simple moving arrow (3 arrows per segment)
+        if flow_ok:
+            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+            length = math.hypot(dx, dy) or 1
+            for i in range(3):
+                ratio = (time.time() * 0.5 + i * 0.33) % 1
+                ax = p1[0] + dx * ratio
+                ay = p1[1] + dy * ratio
+                angle = math.atan2(dy, dx)
+                a_len = 12
+                pts = [
+                    (ax, ay),
+                    (ax - a_len * math.cos(angle - 0.5), ay - a_len * math.sin(angle - 0.5)),
+                    (ax - a_len * math.cos(angle + 0.5), ay - a_len * math.sin(angle + 0.5))
+                ]
+                draw.polygon(pts, fill=(0, 180, 0))
+
+    # --------------------------------------------------
+    # 3. DISPLAY IMAGE
+    # --------------------------------------------------
+    buf = io.BytesIO()
+    canvas.convert("RGB").save(buf, "PNG")
+    st.image(buf.getvalue(), use_container_width=True)
+
+# --------------------------------------------------------------
+# RIGHT PANEL – LINE MANAGEMENT
+# --------------------------------------------------------------
+with col_info:
+    st.header("User Lines")
+    if st.session_state.user_lines:
+        for idx, ln in enumerate(st.session_state.user_lines):
+            p1, p2 = ln["p1"], ln["p2"]
+            up = nearest_valve(p1)
+            down = nearest_valve(p2)
+            status = "Flow" if (up and down and
+                                st.session_state.valve_states.get(up, False) and
+                                st.session_state.valve_states.get(down, False)) else "Blocked"
+            st.write(f"**Line {idx+1}** – {status}")
+            st.caption(f"({p1[0]},{p1[1]}) → ({p2[0]},{p2[1]})  "
+                       f"Upstream: {up or '-'} | Downstream: {down or '-'}")
+            col_del, _ = st.columns([1, 3])
+            with col_del:
+                if st.button("Delete", key=f"del_{idx}"):
+                    st.session_state.user_lines.pop(idx)
+                    st.rerun()
+    else:
+        st.info("No custom lines yet. Click **Start / Stop Drawing** and click two points.")
+
+    st.markdown("---")
+    st.write("**How it works**")
+    st.markdown("- Click **Start / Stop Drawing** → click **two points** on the P&ID.")
+    st.markdown("- The line is **locked** after the second click.")
+    st.markdown("- It turns **green** **only** when **both nearest valves are open**.")
+    st.markdown("- Delete any line with the **Delete** button.")
+
+# --------------------------------------------------------------
+# HELPER: nearest valve to a point (within 40 px)
+# --------------------------------------------------------------
+def nearest_valve(point, max_dist=40):
+    x0, y0 = point
+    best = None
+    best_d = float('inf')
+    for tag, data in valves.items():
+        vx, vy = data["x"], data["y"]
+        d = math.hypot(vx - x0, vy - y0)
+        if d < best_d and d <= max_dist:
+            best_d = d
+            best = tag
+    return best
+
+# --------------------------------------------------------------
+# CLICK → query param (Streamlit hack)
+# --------------------------------------------------------------
+# This tiny script runs only when the image is clicked.
+# It adds ?click=x,y to the URL, which we read above.
+js = """
+<script>
+const img = document.querySelector('img[src*="data:image/png"]');
+if (img) {
+    img.style.cursor = 'crosshair';
+    img.onclick = function(e) {
+        const rect = img.getBoundingClientRect();
+        const x = Math.round(e.clientX - rect.left);
+        const y = Math.round(e.clientY - rect.top);
+        const params = new URLSearchParams(window.location.search);
+        params.set('click', x + ',' + y);
+        window.history.replaceState({}, '', `${window.location.pathname}?${params}`);
+    };
+}
+</script>
+"""
+if st.session_state.drawing:
+    st.markdown(js, unsafe_allow_html=True)
