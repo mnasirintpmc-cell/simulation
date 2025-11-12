@@ -1,167 +1,183 @@
 import streamlit as st
 import json
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import os
-import math
-import time
-import io
 
 st.set_page_config(layout="wide")
 
-# === CONFIG ===
-PID_FILE     = "P&ID.png"
-VALVES_FILE  = "valves.json"
-LINES_FILE   = "pipes.json"
+# Configuration
+PID_FILE = "P&ID.png"
+DATA_FILE = "valves.json"
+PIPES_DATA_FILE = "pipes.json"
 
-# === CACHED P&ID LOADER ===
-@st.cache_data
-def load_pid_image():
-    try:
-        img = Image.open(PID_FILE).convert("RGBA")
-        return img
-    except Exception as e:
-        st.error(f"Failed to load {PID_FILE}: {e}")
-        return Image.new("RGBA", (1200, 800), (240, 240, 240, 255))
-
-base = load_pid_image()
-canvas = base.copy()
-draw = ImageDraw.Draw(canvas)
-font = ImageFont.load_default()
-
-# === LOAD VALVES ===
 def load_valves():
-    if not os.path.exists(VALVES_FILE):
-        st.error(f"Missing {VALVES_FILE}")
-        st.stop()
-    try:
-        with open(VALVES_FILE) as f:
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
             return json.load(f)
-    except Exception as e:
-        st.error(f"Invalid {VALVES_FILE}: {e}")
-        st.stop()
+    return {}
 
-valves = load_valves()
+def load_pipes():
+    if os.path.exists(PIPES_DATA_FILE):
+        with open(PIPES_DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-# === LOAD & SCALE + SNAP LINES ===
-def scale_lines(lines, target_w, target_h, figma_w=184, figma_h=259):
-    if not lines:
-        return []
-    sx = target_w / figma_w
-    sy = target_h / figma_h
-    return [
-        {
-            "x1": int(l["x1"] * sx),
-            "y1": int(l["y1"] * sy),
-            "x2": int(l["x2"] * sx),
-            "y2": int(l["y2"] * sy)
-        }
-        for l in lines
-    ]
-
-def snap_to_valve(point, valves, max_dist=100):
-    x, y = point
-    best = point
-    min_d = float('inf')
-    for tag, data in valves.items():
-        vx, vy = data["x"], data["y"]
-        d = math.hypot(vx - x, vy - y)
-        if d < min_d and d <= max_dist:
-            min_d = d
-            best = (vx, vy)
-    return best
-
-def load_lines():
-    if not os.path.exists(LINES_FILE):
-        st.warning(f"Missing {LINES_FILE}")
-        return []
-
+def get_pid_dimensions():
+    """Get the actual dimensions of the P&ID image in your repo"""
     try:
-        with open(LINES_FILE) as f:
-            data = json.load(f)
-        raw = data.get("lines", data) if isinstance(data, dict) else data
+        with Image.open(PID_FILE) as img:
+            return img.size  # (width, height)
+    except:
+        return (442, 973)  # Fallback to Figma dimensions
+
+def scale_figma_to_actual(figma_coords):
+    """Scale Figma coordinates (442x973) to actual P&ID dimensions"""
+    # Figma canvas dimensions
+    FIGMA_WIDTH = 442
+    FIGMA_HEIGHT = 973
+    
+    # Get actual P&ID dimensions
+    actual_width, actual_height = get_pid_dimensions()
+    
+    # Calculate scaling factors
+    scale_x = actual_width / FIGMA_WIDTH
+    scale_y = actual_height / FIGMA_HEIGHT
+    
+    # Scale all coordinates
+    scaled_coords = []
+    for i in range(0, len(figma_coords), 2):
+        if i + 1 < len(figma_coords):
+            x = figma_coords[i] * scale_x
+            y = figma_coords[i + 1] * scale_y
+            scaled_coords.extend([int(x), int(y)])
+    
+    return scaled_coords
+
+def create_pid_with_scaled_pipes():
+    """Create P&ID image with properly scaled pipes and valves"""
+    try:
+        # Load the actual P&ID image
+        pid_img = Image.open(PID_FILE).convert("RGBA")
+        draw = ImageDraw.Draw(pid_img)
+        
+        # Load pipes data from Figma
+        pipes_data = load_pipes()
+        valves_data = load_valves()
+        
+        # Draw scaled pipes
+        for pipe_id, pipe_data in pipes_data.items():
+            figma_coords = pipe_data.get("coords", [])
+            
+            if figma_coords:
+                # Scale coordinates from Figma to actual P&ID
+                scaled_coords = scale_figma_to_actual(figma_coords)
+                
+                # Draw the pipe segments
+                for i in range(0, len(scaled_coords) - 2, 2):
+                    if i + 3 < len(scaled_coords):
+                        x1, y1 = scaled_coords[i], scaled_coords[i + 1]
+                        x2, y2 = scaled_coords[i + 2], scaled_coords[i + 3]
+                        
+                        # Determine pipe color based on flow logic
+                        has_flow = check_pipe_flow(pipe_data, valves_data)
+                        pipe_color = (0, 100, 255) if has_flow else (100, 100, 100)
+                        pipe_width = 8 if has_flow else 6
+                        
+                        draw.line([(x1, y1), (x2, y2)], fill=pipe_color, width=pipe_width)
+        
+        # Draw valves on top
+        for tag, data in valves_data.items():
+            x, y = data["x"], data["y"]
+            current_state = st.session_state.valve_states.get(tag, False)
+            
+            # Scale valve positions if they're from Figma
+            # (Assuming valve positions are already in correct coordinates)
+            valve_color = (0, 255, 0) if current_state else (255, 0, 0)
+            
+            draw.ellipse([x-10, y-10, x+10, y+10], fill=valve_color, outline="white", width=3)
+            draw.text((x+12, y-8), tag, fill="white", stroke_fill="black", stroke_width=1)
+        
+        return pid_img.convert("RGB")
+    
     except Exception as e:
-        st.error(f"Error reading {LINES_FILE}: {e}")
-        return []
+        st.error(f"Error creating P&ID: {e}")
+        try:
+            return Image.open(PID_FILE).convert("RGB")
+        except:
+            return Image.new("RGB", (800, 600), (255, 255, 255))
 
-    w, h = base.size
-    scaled = scale_lines(raw, w, h)
+def check_pipe_flow(pipe_data, valves_data):
+    """Check if a pipe should have flow based on valve states"""
+    required_valves = pipe_data.get("flow_logic", [])
+    
+    for valve_tag in required_valves:
+        if valve_tag in st.session_state.valve_states:
+            if not st.session_state.valve_states[valve_tag]:
+                return False
+        else:
+            return False  # Valve not found
+    
+    return True
 
-    # Optional: Snap to valves
-    snapped = []
-    for line in scaled:
-        p1 = snap_to_valve((line["x1"], line["y1"]), valves)
-        p2 = snap_to_valve((line["x2"], line["y2"]), valves)
-        if p1 != p2:
-            snapped.append({"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]})
-    return snapped
+# Load data
+valves = load_valves()
+pipes = load_pipes()
 
-lines = load_lines()
-
-# === SESSION STATE ===
+# Initialize session state
 if "valve_states" not in st.session_state:
-    st.session_state.valve_states = {
-        tag: bool(data.get("state", False)) for tag, data in valves.items()
-    }
+    st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
-# === SIDEBAR ===
+# Main app
+st.title("P&ID Interactive Simulation - Scaled Pipes")
+
+# Display scaling info
+pid_width, pid_height = get_pid_dimensions()
+st.write(f"**P&ID Dimensions:** {pid_width} × {pid_height} pixels")
+st.write(f"**Figma Dimensions:** 442 × 973 pixels")
+st.write(f"**Scaling Factors:** X: {pid_width/442:.2f}, Y: {pid_height/973:.2f}")
+
+# Display the scaled P&ID
+composite_img = create_pid_with_scaled_pipes()
+st.image(composite_img, use_container_width=True, caption="P&ID with Scaled Pipes from Figma")
+
+# Valve controls in sidebar
 with st.sidebar:
-    st.header("Valve Controls")
-    for tag, data in valves.items():
-        state = st.session_state.valve_states[tag]
-        if st.button(
-            f"{'OPEN' if state else 'CLOSED'} {tag}",
-            type="primary" if state else "secondary",
-            key=f"btn_{tag}",
-            use_container_width=True,
-        ):
-            st.session_state.valve_states[tag] = not state
-            st.rerun()
+    st.header("🎯 Valve Controls")
     st.markdown("---")
-    st.metric("Open", sum(st.session_state.valve_states.values()))
-    st.metric("Closed", len(valves) - sum(st.session_state.valve_states.values()))
+    
+    for tag, data in valves.items():
+        current_state = st.session_state.valve_states[tag]
+        button_label = f"🔴 {tag} - OPEN" if current_state else f"🟢 {tag} - CLOSED"
+        button_type = "primary" if current_state else "secondary"
+        
+        if st.button(button_label, key=f"btn_{tag}", use_container_width=True, type=button_type):
+            st.session_state.valve_states[tag] = not current_state
+            st.rerun()
 
-# === DRAW VALVES ===
-for tag, data in valves.items():
-    x, y = data["x"], data["y"]
-    col = (0,255,0,255) if st.session_state.valve_states.get(tag, False) else (255,0,0,255)
-    draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
-    draw.text((x+15, y-15), tag, fill="white", font=font)
+# Debug information
+with st.expander("🔧 Scaling Debug Info"):
+    st.write("**Valves:**", valves)
+    st.write("**Pipes (Figma coordinates):**", pipes)
+    
+    # Show scaled coordinates for first pipe
+    if pipes:
+        first_pipe = list(pipes.values())[0]
+        figma_coords = first_pipe.get("coords", [])
+        scaled_coords = scale_figma_to_actual(figma_coords)
+        st.write("**First pipe scaling example:**")
+        st.write(f"Figma: {figma_coords}")
+        st.write(f"Scaled: {scaled_coords}")
 
-# === DRAW PIPES + FLOW ===
-for line in lines:
-    p1 = (line["x1"], line["y1"])
-    p2 = (line["x2"], line["y2"])
-
-    # Find nearest valves
-    up = next((t for t, d in valves.items() if math.hypot(d["x"]-p1[0], d["y"]-p1[1]) < 60), None)
-    down = next((t for t, d in valves.items() if math.hypot(d["x"]-p2[0], d["y"]-p2[1]) < 60), None)
-    flow = up and down and st.session_state.valve_states.get(up, False) and st.session_state.valve_states.get(down, False)
-
-    draw.line([p1, p2], fill=(0,255,0,220) if flow else (255,0,0,180), width=8)
-
-    if flow:
-        dx, dy = p2[0]-p1[0], p2[1]-p1[1]
-        length = math.hypot(dx, dy) or 1
-        for i in range(3):
-            t = (time.time() * 0.6 + i * 0.33) % 1
-            ax = p1[0] + dx * t
-            ay = p1[1] + dy * t
-            angle = math.atan2(dy, dx)
-            a_len = 14
-            pts = [
-                (ax, ay),
-                (ax - a_len * math.cos(angle - 0.5), ay - a_len * math.sin(angle - 0.5)),
-                (ax - a_len * math.cos(angle + 0.5), ay - a_len * math.sin(angle + 0.5))
-            ]
-            draw.polygon(pts, fill=(0,200,0))
-
-# === DISPLAY ===
-buf = io.BytesIO()
-canvas.convert("RGB").save(buf, "PNG")
-st.image(buf.getvalue(), use_container_width=True)
-
-# === DEBUG (Optional) ===
-with st.expander("Debug"):
-    st.write("P&ID Size:", base.size)
-    st.write("Loaded Pipes:", len(lines))
-    st.json(lines[:3])
+# Quick actions
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Open All Valves"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = True
+        st.rerun()
+with col2:
+    if st.button("Close All Valves"):
+        for tag in valves:
+            st.session_state.valve_states[tag] = False
+        st.rerun()
