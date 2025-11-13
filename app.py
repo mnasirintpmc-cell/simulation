@@ -41,10 +41,11 @@ if "pipes" not in st.session_state:
     st.session_state.pipes = pipes
 
 def create_pid_display():
-    """Create P&ID display with pipes and valves"""
+    """Create P&ID display fixed to 1200×800"""
     try:
-        # Load the P&ID image
+        # Load and resize P&ID to 1200×800
         pid_img = Image.open(PID_FILE).convert("RGBA")
+        pid_img = pid_img.resize((1200, 800), Image.Resampling.LANCZOS)
         draw = ImageDraw.Draw(pid_img)
         
         # Draw pipes
@@ -65,17 +66,20 @@ def create_pid_display():
     
     except Exception as e:
         st.error(f"Error: {e}")
+        # Return blank 1200×800 image if error
         return Image.new("RGB", (1200, 800), (255, 255, 255))
 
 # Main app
-st.title("P&ID Pipe Position Adjuster")
+st.title("P&ID Pipe Position Adjuster - Fixed 1200×800")
 
-# Display the P&ID
-st.image(create_pid_display(), use_container_width=True, caption="🟣 Purple = Selected Pipe | 🔵 Blue = Other Pipes")
+# Display the P&ID (fixed size)
+st.image(create_pid_display(), use_container_width=False, caption="🟣 Purple = Selected Pipe | 🔵 Blue = Other Pipes | Fixed 1200×800 Display")
 
-# Pipe selection in sidebar - JUST LIKE VALVES
-with st.sidebar:
-    st.header("🎯 Select Pipe to Adjust")
+# Pipe selection and adjustment controls
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.header("🎯 Select Pipe")
     
     if st.session_state.pipes:
         for i in range(len(st.session_state.pipes)):
@@ -85,35 +89,39 @@ with st.sidebar:
             if st.button(label, key=f"pipe_select_{i}", use_container_width=True):
                 st.session_state.selected_pipe = i
                 st.rerun()
-    
-    st.markdown("---")
-    st.header("🎯 Valve Controls")
-    for tag in valves:
-        state = st.session_state.valve_states[tag]
-        label = f"🔴 {tag}" if state else f"🟢 {tag}"
-        if st.button(label, key=f"valve_{tag}", use_container_width=True):
-            st.session_state.valve_states[tag] = not state
-            st.rerun()
 
-# Pipe position adjustment - SIMPLE NUMBER INPUTS LIKE VALVES
+with col2:
+    st.header("🎯 Valve Controls")
+    valve_cols = st.columns(3)
+    for i, tag in enumerate(valves):
+        with valve_cols[i % 3]:
+            state = st.session_state.valve_states[tag]
+            label = f"🔴 {tag}" if state else f"🟢 {tag}"
+            if st.button(label, key=f"valve_{tag}", use_container_width=True):
+                st.session_state.valve_states[tag] = not state
+                st.rerun()
+
+# Pipe position adjustment controls
 if st.session_state.selected_pipe is not None:
     st.header(f"✏️ Adjust Pipe {st.session_state.selected_pipe + 1} Position")
     
     current_pipe = st.session_state.pipes[st.session_state.selected_pipe]
     
+    # Coordinate inputs
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Start Point")
-        new_x1 = st.number_input("X1", value=current_pipe["x1"], key="x1_input")
-        new_y1 = st.number_input("Y1", value=current_pipe["y1"], key="y1_input")
+        st.subheader("Start Point (X1, Y1)")
+        new_x1 = st.number_input("X1 Position", value=current_pipe["x1"], key="x1_input")
+        new_y1 = st.number_input("Y1 Position", value=current_pipe["y1"], key="y1_input")
     
     with col2:
-        st.subheader("End Point")  
-        new_x2 = st.number_input("X2", value=current_pipe["x2"], key="x2_input")
-        new_y2 = st.number_input("Y2", value=current_pipe["y2"], key="y2_input")
+        st.subheader("End Point (X2, Y2)")  
+        new_x2 = st.number_input("X2 Position", value=current_pipe["x2"], key="x2_input")
+        new_y2 = st.number_input("Y2 Position", value=current_pipe["y2"], key="y2_input")
     
-    if st.button("💾 Save Pipe Position", type="primary"):
+    # Save button
+    if st.button("💾 Save Pipe Position", type="primary", use_container_width=True):
         st.session_state.pipes[st.session_state.selected_pipe]["x1"] = new_x1
         st.session_state.pipes[st.session_state.selected_pipe]["y1"] = new_y1
         st.session_state.pipes[st.session_state.selected_pipe]["x2"] = new_x2
@@ -122,50 +130,89 @@ if st.session_state.selected_pipe is not None:
         st.success("Pipe position saved!")
         st.rerun()
 
-# Quick movement buttons
+# Quick movement controls
 if st.session_state.selected_pipe is not None:
     st.header("🔄 Quick Adjustments")
     
-    col1, col2, col3, col4 = st.columns(4)
+    st.subheader("Move Entire Pipe")
+    move_cols = st.columns(4)
     
-    with col1:
-        if st.button("← Move Left 5px"):
+    with move_cols[0]:
+        if st.button("← Left 5px", use_container_width=True):
             pipe = st.session_state.pipes[st.session_state.selected_pipe]
             pipe["x1"] -= 5
             pipe["x2"] -= 5
             save_pipes(st.session_state.pipes)
             st.rerun()
     
-    with col2:
-        if st.button("→ Move Right 5px"):
+    with move_cols[1]:
+        if st.button("→ Right 5px", use_container_width=True):
             pipe = st.session_state.pipes[st.session_state.selected_pipe]
             pipe["x1"] += 5
             pipe["x2"] += 5
             save_pipes(st.session_state.pipes)
             st.rerun()
     
-    with col3:
-        if st.button("↑ Move Up 5px"):
+    with move_cols[2]:
+        if st.button("↑ Up 5px", use_container_width=True):
             pipe = st.session_state.pipes[st.session_state.selected_pipe]
             pipe["y1"] -= 5
             pipe["y2"] -= 5
             save_pipes(st.session_state.pipes)
             st.rerun()
     
-    with col4:
-        if st.button("↓ Move Down 5px"):
+    with move_cols[3]:
+        if st.button("↓ Down 5px", use_container_width=True):
             pipe = st.session_state.pipes[st.session_state.selected_pipe]
             pipe["y1"] += 5
             pipe["y2"] += 5
             save_pipes(st.session_state.pipes)
             st.rerun()
 
+    # Individual endpoint adjustment
+    st.subheader("Adjust Individual Endpoints")
+    end_cols = st.columns(4)
+    
+    with end_cols[0]:
+        if st.button("Move Start ←", use_container_width=True):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["x1"] -= 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+    
+    with end_cols[1]:
+        if st.button("Move Start →", use_container_width=True):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["x1"] += 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+    
+    with end_cols[2]:
+        if st.button("Move End ←", use_container_width=True):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["x2"] -= 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+    
+    with end_cols[3]:
+        if st.button("Move End →", use_container_width=True):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["x2"] += 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+
 # Current coordinates display
 st.header("📋 Current Pipe Positions")
-for i, pipe in enumerate(st.session_state.pipes):
-    if i == st.session_state.selected_pipe:
-        st.success(f"**🟣 Pipe {i+1}:** ({pipe['x1']}, {pipe['y1']}) to ({pipe['x2']}, {pipe['y2']})")
-    else:
-        st.write(f"Pipe {i+1}: ({pipe['x1']}, {pipe['y1']}) to ({pipe['x2']}, {pipe['y2']})")
+if st.session_state.pipes:
+    for i, pipe in enumerate(st.session_state.pipes):
+        if i == st.session_state.selected_pipe:
+            st.success(f"**🟣 Pipe {i+1}:** Start ({pipe['x1']}, {pipe['y1']}) → End ({pipe['x2']}, {pipe['y2']})")
+        else:
+            st.write(f"Pipe {i+1}: Start ({pipe['x1']}, {pipe['y1']}) → End ({pipe['x2']}, {pipe['y2']})")
 
-st.info("💡 **Just like valves:** Select pipe → Adjust numbers → Click save!")
+# Save all button
+if st.button("💾 Save All Pipe Positions", type="secondary"):
+    save_pipes(st.session_state.pipes)
+    st.success("All pipe positions saved!")
+
+st.info("🎯 **Fixed 1200×800 display** | Select pipe → Adjust coordinates → See instant updates!")
