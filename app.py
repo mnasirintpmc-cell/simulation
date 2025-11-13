@@ -8,6 +8,7 @@ st.set_page_config(layout="wide")
 # Configuration
 PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
+PIPES_DATA_FILE = "pipes.json"
 
 def load_valves():
     if os.path.exists(DATA_FILE):
@@ -15,150 +16,156 @@ def load_valves():
             return json.load(f)
     return {}
 
-def create_pid_with_valves():
-    """Create P&ID image with valve indicators"""
-    try:
-        pid_img = Image.open(PID_FILE).convert("RGBA")
-        draw = ImageDraw.Draw(pid_img)
-        
-        for tag, data in valves.items():
-            x, y = data["x"], data["y"]
-            current_state = st.session_state.valve_states[tag]
-            
-            # Choose color based on valve state
-            color = (0, 255, 0) if current_state else (255, 0, 0)
-            
-            # Draw valve indicator
-            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
-            draw.text((x+12, y-10), tag, fill="white", stroke_fill="black", stroke_width=1)
-            
-        return pid_img.convert("RGB")
-    except Exception as e:
-        st.error(f"Error creating P&ID image: {e}")
-        try:
-            return Image.open(PID_FILE).convert("RGB")
-        except:
-            return Image.new("RGB", (800, 600), (255, 255, 255))
+def load_pipes():
+    if os.path.exists(PIPES_DATA_FILE):
+        with open(PIPES_DATA_FILE, "r") as f:
+            return json.load(f)
+    return []
 
-# Load valve data
+def save_pipes(pipes_data):
+    with open(PIPES_DATA_FILE, "w") as f:
+        json.dump(pipes_data, f, indent=2)
+
+# Load data
 valves = load_valves()
+pipes = load_pipes()
 
-# Initialize session state for current states
+# Initialize session state
 if "valve_states" not in st.session_state:
     st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
+if "selected_pipe" not in st.session_state:
+    st.session_state.selected_pipe = 0 if pipes else None
+
+if "pipes" not in st.session_state:
+    st.session_state.pipes = pipes
+
+def create_pid_display():
+    """Create P&ID display with pipes and valves"""
+    try:
+        # Load the P&ID image
+        pid_img = Image.open(PID_FILE).convert("RGBA")
+        draw = ImageDraw.Draw(pid_img)
+        
+        # Draw pipes
+        for i, pipe in enumerate(st.session_state.pipes):
+            color = (148, 0, 211) if i == st.session_state.selected_pipe else (0, 0, 255)  # Purple for selected
+            width = 8 if i == st.session_state.selected_pipe else 4
+            draw.line([(pipe["x1"], pipe["y1"]), (pipe["x2"], pipe["y2"])], fill=color, width=width)
+        
+        # Draw valves
+        for tag, data in valves.items():
+            x, y = data["x"], data["y"]
+            state = st.session_state.valve_states[tag]
+            color = (0, 255, 0) if state else (255, 0, 0)
+            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="black", width=2)
+            draw.text((x+10, y-6), tag, fill="black")
+        
+        return pid_img.convert("RGB")
+    
+    except Exception as e:
+        st.error(f"Error: {e}")
+        return Image.new("RGB", (1200, 800), (255, 255, 255))
+
 # Main app
-st.title("P&ID Interactive Simulation")
+st.title("P&ID Pipe Position Adjuster")
 
-if not valves:
-    st.error("No valves found in valves.json. Please check your configuration.")
-    st.stop()
+# Display the P&ID
+st.image(create_pid_display(), use_container_width=True, caption="🟣 Purple = Selected Pipe | 🔵 Blue = Other Pipes")
 
-# Create sidebar for valve controls
+# Pipe selection in sidebar - JUST LIKE VALVES
 with st.sidebar:
-    st.header("🎯 Valve Controls")
-    st.markdown("---")
+    st.header("🎯 Select Pipe to Adjust")
     
-    # Valve toggle buttons in sidebar
-    for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        
-        # Create colored button based on state
-        if current_state:
-            button_label = f"🔴 {tag} - OPEN"
-            button_type = "primary"
-        else:
-            button_label = f"🟢 {tag} - CLOSED" 
-            button_type = "secondary"
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button(button_label, key=f"btn_{tag}", use_container_width=True, type=button_type):
-                st.session_state.valve_states[tag] = not current_state
-                st.rerun()
-        with col2:
-            status = "🟢" if current_state else "🔴"
-            st.write(status)
-    
-    st.markdown("---")
-    
-    # Current status summary in sidebar
-    st.subheader("📊 Current Status")
-    open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
-    closed_valves = len(valves) - open_valves
-    
-    st.metric("Open Valves", open_valves)
-    st.metric("Closed Valves", closed_valves)
-    
-    st.markdown("---")
-    
-    # Quick actions
-    st.subheader("⚡ Quick Actions")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Open All", use_container_width=True):
-            for tag in valves:
-                st.session_state.valve_states[tag] = True
-            st.rerun()
-    with col2:
-        if st.button("Close All", use_container_width=True):
-            for tag in valves:
-                st.session_state.valve_states[tag] = False
-            st.rerun()
-
-# Main content area - P&ID display
-col1, col2 = st.columns([3, 1])
-with col1:
-    # Create and display the P&ID with valve indicators
-    composite_img = create_pid_with_valves()
-    st.image(composite_img, use_container_width=True, caption="Interactive P&ID - Valves update in real-time")
-
-with col2:
-    # Right sidebar for detailed status
-    st.header("🔍 Valve Details")
-    st.markdown("---")
-    
-    for tag, data in valves.items():
-        current_state = st.session_state.valve_states[tag]
-        status = "🟢 OPEN" if current_state else "🔴 CLOSED"
-        
-        with st.expander(f"{tag} - {status}", expanded=False):
-            st.write(f"**Position:** ({data['x']}, {data['y']})")
-            st.write(f"**Current State:** {status}")
+    if st.session_state.pipes:
+        for i in range(len(st.session_state.pipes)):
+            is_selected = st.session_state.selected_pipe == i
+            label = f"🟣 Pipe {i+1}" if is_selected else f"Pipe {i+1}"
             
-            # Mini toggle inside expander
-            if st.button(f"Toggle {tag}", key=f"mini_{tag}", use_container_width=True):
-                st.session_state.valve_states[tag] = not current_state
+            if st.button(label, key=f"pipe_select_{i}", use_container_width=True):
+                st.session_state.selected_pipe = i
                 st.rerun()
-
-# Bottom section for additional info
-st.markdown("---")
-st.markdown("### 📋 Instructions")
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("**Valve Colors:**")
-    st.markdown("- 🟢 Green = Valve OPEN")
-    st.markdown("- 🔴 Red = Valve CLOSED")
-
-with col2:
-    st.markdown("**Controls:**")
-    st.markdown("- Use left sidebar to toggle valves")
-    st.markdown("- Click valve details for more info")
-    st.markdown("- Use quick actions for bulk operations")
-
-with col3:
-    st.markdown("**Notes:**")
-    st.markdown("- Valve positions are fixed")
-    st.markdown("- Changes are temporary")
-    st.markdown("- No file modifications")
-
-# Debug information
-with st.expander("🔧 Debug Information"):
-    st.write("**Loaded Valves Configuration:**")
-    st.json(valves)
     
-    st.write("**Current Valve States:**")
-    st.json(st.session_state.valve_states)
+    st.markdown("---")
+    st.header("🎯 Valve Controls")
+    for tag in valves:
+        state = st.session_state.valve_states[tag]
+        label = f"🔴 {tag}" if state else f"🟢 {tag}"
+        if st.button(label, key=f"valve_{tag}", use_container_width=True):
+            st.session_state.valve_states[tag] = not state
+            st.rerun()
+
+# Pipe position adjustment - SIMPLE NUMBER INPUTS LIKE VALVES
+if st.session_state.selected_pipe is not None:
+    st.header(f"✏️ Adjust Pipe {st.session_state.selected_pipe + 1} Position")
     
-    st.write(f"**Total Valves:** {len(valves)}")
+    current_pipe = st.session_state.pipes[st.session_state.selected_pipe]
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Start Point")
+        new_x1 = st.number_input("X1", value=current_pipe["x1"], key="x1_input")
+        new_y1 = st.number_input("Y1", value=current_pipe["y1"], key="y1_input")
+    
+    with col2:
+        st.subheader("End Point")  
+        new_x2 = st.number_input("X2", value=current_pipe["x2"], key="x2_input")
+        new_y2 = st.number_input("Y2", value=current_pipe["y2"], key="y2_input")
+    
+    if st.button("💾 Save Pipe Position", type="primary"):
+        st.session_state.pipes[st.session_state.selected_pipe]["x1"] = new_x1
+        st.session_state.pipes[st.session_state.selected_pipe]["y1"] = new_y1
+        st.session_state.pipes[st.session_state.selected_pipe]["x2"] = new_x2
+        st.session_state.pipes[st.session_state.selected_pipe]["y2"] = new_y2
+        save_pipes(st.session_state.pipes)
+        st.success("Pipe position saved!")
+        st.rerun()
+
+# Quick movement buttons
+if st.session_state.selected_pipe is not None:
+    st.header("🔄 Quick Adjustments")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("← Move Left 5px"):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["x1"] -= 5
+            pipe["x2"] -= 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+    
+    with col2:
+        if st.button("→ Move Right 5px"):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["x1"] += 5
+            pipe["x2"] += 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+    
+    with col3:
+        if st.button("↑ Move Up 5px"):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["y1"] -= 5
+            pipe["y2"] -= 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+    
+    with col4:
+        if st.button("↓ Move Down 5px"):
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            pipe["y1"] += 5
+            pipe["y2"] += 5
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+
+# Current coordinates display
+st.header("📋 Current Pipe Positions")
+for i, pipe in enumerate(st.session_state.pipes):
+    if i == st.session_state.selected_pipe:
+        st.success(f"**🟣 Pipe {i+1}:** ({pipe['x1']}, {pipe['y1']}) to ({pipe['x2']}, {pipe['y2']})")
+    else:
+        st.write(f"Pipe {i+1}: ({pipe['x1']}, {pipe['y1']}) to ({pipe['x2']}, {pipe['y2']})")
+
+st.info("💡 **Just like valves:** Select pipe → Adjust numbers → Click save!")
