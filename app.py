@@ -166,18 +166,25 @@ with col2:
         st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
         st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
         
+        # Calculate current length and orientation
+        length = ((pipe["x2"] - pipe["x1"])**2 + (pipe["y2"] - pipe["y1"])**2)**0.5
+        is_horizontal = abs(pipe["y2"] - pipe["y1"]) < abs(pipe["x2"] - pipe["x1"])
+        orientation = "Horizontal" if is_horizontal else "Vertical"
+        st.write(f"**Length:** {int(length)} pixels")
+        st.write(f"**Orientation:** {orientation}")
+        
         # Pipe movement controls
         st.markdown("---")
-        st.subheader("Move Pipe")
+        st.subheader("📍 Move Pipe")
         col_up, col_down = st.columns(2)
         with col_up:
-            if st.button("↑ Up"):
+            if st.button("↑ Up", use_container_width=True):
                 pipe["y1"] -= 5
                 pipe["y2"] -= 5
                 save_pipes(st.session_state.pipes)
                 st.rerun()
         with col_down:
-            if st.button("↓ Down"):
+            if st.button("↓ Down", use_container_width=True):
                 pipe["y1"] += 5
                 pipe["y2"] += 5
                 save_pipes(st.session_state.pipes)
@@ -185,17 +192,91 @@ with col2:
         
         col_left, col_right = st.columns(2)
         with col_left:
-            if st.button("← Left"):
+            if st.button("← Left", use_container_width=True):
                 pipe["x1"] -= 5
                 pipe["x2"] -= 5
                 save_pipes(st.session_state.pipes)
                 st.rerun()
         with col_right:
-            if st.button("→ Right"):
+            if st.button("→ Right", use_container_width=True):
                 pipe["x1"] += 5
                 pipe["x2"] += 5
                 save_pipes(st.session_state.pipes)
                 st.rerun()
+        
+        # Orientation controls
+        st.markdown("---")
+        st.subheader("🔄 Change Orientation")
+        col_horiz, col_vert = st.columns(2)
+        with col_horiz:
+            if st.button("➖ Horizontal", use_container_width=True):
+                # Make pipe horizontal (keep start point, adjust end point)
+                pipe["y2"] = pipe["y1"]
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        with col_vert:
+            if st.button("➡️ Vertical", use_container_width=True):
+                # Make pipe vertical (keep start point, adjust end point)
+                pipe["x2"] = pipe["x1"]
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        
+        # Length controls
+        st.markdown("---")
+        st.subheader("📏 Adjust Length")
+        col_longer, col_shorter = st.columns(2)
+        with col_longer:
+            if st.button("➕ Longer", use_container_width=True):
+                # Increase length by 10 pixels
+                if is_horizontal:
+                    if pipe["x2"] > pipe["x1"]:
+                        pipe["x2"] += 10
+                    else:
+                        pipe["x1"] += 10
+                else:
+                    if pipe["y2"] > pipe["y1"]:
+                        pipe["y2"] += 10
+                    else:
+                        pipe["y1"] += 10
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        with col_shorter:
+            if st.button("➖ Shorter", use_container_width=True):
+                # Decrease length by 10 pixels (minimum 10 pixels)
+                if is_horizontal:
+                    if abs(pipe["x2"] - pipe["x1"]) > 20:
+                        if pipe["x2"] > pipe["x1"]:
+                            pipe["x2"] -= 10
+                        else:
+                            pipe["x1"] -= 10
+                else:
+                    if abs(pipe["y2"] - pipe["y1"]) > 20:
+                        if pipe["y2"] > pipe["y1"]:
+                            pipe["y2"] -= 10
+                        else:
+                            pipe["y1"] -= 10
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        
+        # Precise length control
+        st.markdown("---")
+        st.subheader("🎯 Set Exact Length")
+        new_length = st.number_input("Length (pixels)", value=int(length), min_value=10, max_value=500)
+        if st.button("Apply Length", use_container_width=True):
+            if is_horizontal:
+                # Keep Y same, adjust X
+                if pipe["x2"] > pipe["x1"]:
+                    pipe["x2"] = pipe["x1"] + new_length
+                else:
+                    pipe["x1"] = pipe["x2"] + new_length
+            else:
+                # Keep X same, adjust Y
+                if pipe["y2"] > pipe["y1"]:
+                    pipe["y2"] = pipe["y1"] + new_length
+                else:
+                    pipe["y1"] = pipe["y2"] + new_length
+            save_pipes(st.session_state.pipes)
+            st.rerun()
     
     st.markdown("---")
     
@@ -227,17 +308,18 @@ with col1:
     st.markdown("- 🔵 Blue = Normal Pipes")
 
 with col2:
-    st.markdown("**Controls:**")
-    st.markdown("- Use left sidebar to toggle valves")
-    st.markdown("- Select pipes to move them")
-    st.markdown("- Use arrow buttons to move pipes")
-    st.markdown("- Click valve details for more info")
+    st.markdown("**Pipe Controls:**")
+    st.markdown("- **Arrows**: Move entire pipe")
+    st.markdown("- **Horizontal/Vertical**: Change orientation")
+    st.markdown("- **Longer/Shorter**: Adjust length")
+    st.markdown("- **Length input**: Set exact length")
 
 with col3:
     st.markdown("**Notes:**")
     st.markdown("- Valve positions are fixed")
     st.markdown("- Pipe positions can be adjusted")
     st.markdown("- Changes are saved automatically")
+    st.markdown("- Minimum pipe length: 10 pixels")
 
 # Debug information
 with st.expander("🔧 Debug Information"):
