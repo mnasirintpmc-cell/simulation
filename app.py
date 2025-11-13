@@ -26,14 +26,6 @@ def save_pipes(pipes_data):
     with open(PIPES_DATA_FILE, "w") as f:
         json.dump(pipes_data, f, indent=2)
 
-def get_image_dimensions():
-    """Get the dimensions of the P&ID image"""
-    try:
-        with Image.open(PID_FILE) as img:
-            return img.size
-    except:
-        return (1200, 800)  # Default fallback
-
 def create_pid_with_valves_and_pipes():
     """Create P&ID image with valve indicators AND pipes"""
     try:
@@ -181,34 +173,56 @@ with col2:
         st.write(f"**Length:** {int(length)} pixels")
         st.write(f"**Orientation:** {orientation}")
         
-        # CENTER PIPE BUTTON - NEW FEATURE
+        # CENTER PIPE USING PIPE 4 AS REFERENCE - UPDATED
         st.markdown("---")
-        st.subheader("🎯 Center Pipe")
-        if st.button("📍 Center This Pipe", use_container_width=True, type="primary"):
-            # Get image dimensions
-            img_width, img_height = get_image_dimensions()
-            
-            # Calculate center position
-            center_x = img_width // 2
-            center_y = img_height // 2
-            
-            # Calculate pipe midpoint
-            mid_x = (pipe["x1"] + pipe["x2"]) // 2
-            mid_y = (pipe["y1"] + pipe["y2"]) // 2
-            
-            # Calculate offset to move pipe to center
-            offset_x = center_x - mid_x
-            offset_y = center_y - mid_y
-            
-            # Apply offset
-            pipe["x1"] += offset_x
-            pipe["y1"] += offset_y
-            pipe["x2"] += offset_x
-            pipe["y2"] += offset_y
-            
-            save_pipes(st.session_state.pipes)
-            st.success(f"Pipe {st.session_state.selected_pipe + 1} centered!")
-            st.rerun()
+        st.subheader("🎯 Move to Pipe 4 Area")
+        if st.button("📍 Move to Pipe 4 Position", use_container_width=True, type="primary"):
+            if len(st.session_state.pipes) >= 5:  # Make sure Pipe 4 exists (index 3)
+                # Get Pipe 4's position as reference center
+                pipe4 = st.session_state.pipes[3]  # Pipe 4 is index 3
+                
+                # Calculate Pipe 4's midpoint
+                pipe4_mid_x = (pipe4["x1"] + pipe4["x2"]) // 2
+                pipe4_mid_y = (pipe4["y1"] + pipe4["y2"]) // 2
+                
+                # Calculate current pipe's midpoint
+                current_mid_x = (pipe["x1"] + pipe["x2"]) // 2
+                current_mid_y = (pipe["y1"] + pipe["y2"]) // 2
+                
+                # Calculate offset to move current pipe to Pipe 4's area
+                offset_x = pipe4_mid_x - current_mid_x
+                offset_y = pipe4_mid_y - current_mid_y
+                
+                # Apply offset
+                pipe["x1"] += offset_x
+                pipe["y1"] += offset_y
+                pipe["x2"] += offset_x
+                pipe["y2"] += offset_y
+                
+                save_pipes(st.session_state.pipes)
+                st.success(f"Pipe {st.session_state.selected_pipe + 1} moved to Pipe 4 area!")
+                st.rerun()
+            else:
+                st.error("Pipe 4 not found! Using default center.")
+                # Fallback: move to image center
+                img_width, img_height = 1200, 800  # Default fallback
+                center_x = img_width // 2
+                center_y = img_height // 2
+                
+                current_mid_x = (pipe["x1"] + pipe["x2"]) // 2
+                current_mid_y = (pipe["y1"] + pipe["y2"]) // 2
+                
+                offset_x = center_x - current_mid_x
+                offset_y = center_y - current_mid_y
+                
+                pipe["x1"] += offset_x
+                pipe["y1"] += offset_y
+                pipe["x2"] += offset_x
+                pipe["y2"] += offset_y
+                
+                save_pipes(st.session_state.pipes)
+                st.success(f"Pipe {st.session_state.selected_pipe + 1} moved to center!")
+                st.rerun()
         
         # Pipe movement controls
         st.markdown("---")
@@ -346,7 +360,7 @@ with col1:
 
 with col2:
     st.markdown("**Pipe Controls:**")
-    st.markdown("- **Center**: Move pipe to image center")
+    st.markdown("- **Move to Pipe 4**: Positions pipe in visible area")
     st.markdown("- **Arrows**: Move entire pipe")
     st.markdown("- **Horizontal/Vertical**: Change orientation")
     st.markdown("- **Longer/Shorter**: Adjust length")
@@ -355,7 +369,7 @@ with col3:
     st.markdown("**Notes:**")
     st.markdown("- Valve positions are fixed")
     st.markdown("- Pipe positions can be adjusted")
-    st.markdown("- Use 'Center' if pipe is off-screen")
+    st.markdown("- Use 'Move to Pipe 4' if pipe is off-screen")
     st.markdown("- Changes are saved automatically")
 
 # Debug information
