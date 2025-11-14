@@ -72,7 +72,7 @@ def save_pipes(pipes_data):
         with open(PIPES_DATA_FILE, "w") as f:
             json.dump(pipes_data, f, indent=2)
         st.success("✅ Pipes saved successfully!")
-        return True
+        return pipes_data  # Return the saved data
     except Exception as e:
         st.error(f"Error saving pipes: {e}")
         return False
@@ -152,14 +152,23 @@ if "valve_states" not in st.session_state:
 if "selected_pipe" not in st.session_state:
     st.session_state.selected_pipe = 0 if st.session_state.pipes else None
 
+# Initialize for showing JSON data
+if "show_json" not in st.session_state:
+    st.session_state.show_json = False
+if "saved_json_data" not in st.session_state:
+    st.session_state.saved_json_data = None
+
 # Main app
 st.title("P&ID Interactive Simulation")
 st.markdown("**🔒 Valves are fixed | 🎯 Pipes are movable**")
 
-# SAVE ALL PIPES BUTTON
+# SAVE ALL PIPES BUTTON - Now shows JSON after saving
 st.info("💾 **Move pipes as needed, then click below to PERMANENTLY save positions**")
 if st.button("💾 SAVE ALL PIPE POSITIONS", type="primary", use_container_width=True):
-    if save_pipes(st.session_state.pipes):
+    saved_data = save_pipes(st.session_state.pipes)
+    if saved_data:
+        st.session_state.saved_json_data = saved_data
+        st.session_state.show_json = True
         st.success("✅ All pipe positions saved! They will persist after refresh.")
 
 # RESET PIPES BUTTON (if needed)
@@ -182,11 +191,24 @@ with st.sidebar:
     for tag, data in valves.items():
         current_state = st.session_state.valve_states[tag]
         
-        button_label = f"🔴 {tag} - OPEN" if current_state else f"🟢 {tag} - CLOSED"
+        # Show valve status with color coding
+        status_color = "🔴" if current_state else "🟢"
+        status_text = "OPEN" if current_state else "CLOSED"
+        
+        button_label = f"{status_color} {tag} - {status_text}"
         
         if st.button(button_label, key=f"btn_{tag}", use_container_width=True):
             st.session_state.valve_states[tag] = not current_state
             st.rerun()
+    
+    st.markdown("---")
+    
+    # Show current valve states
+    st.subheader("📊 Current Valve Status")
+    for tag, state in st.session_state.valve_states.items():
+        status_icon = "🔴" if state else "🟢"
+        status_text = "OPEN" if state else "CLOSED"
+        st.write(f"{status_icon} **{tag}**: {status_text}")
     
     st.markdown("---")
     
@@ -292,14 +314,39 @@ with col2:
         # Save individual pipe
         st.markdown("---")
         if st.button("💾 SAVE THIS PIPE", use_container_width=True, type="primary"):
-            if save_pipes(st.session_state.pipes):
+            saved_data = save_pipes(st.session_state.pipes)
+            if saved_data:
+                st.session_state.saved_json_data = saved_data
+                st.session_state.show_json = True
                 st.success("✅ Pipe position saved!")
+
+# Show JSON data after saving
+if st.session_state.show_json and st.session_state.saved_json_data:
+    st.markdown("---")
+    st.header("💾 Saved JSON Data")
+    st.success("Below is the JSON data that was saved to the file:")
+    
+    # Display the JSON in a nice format
+    st.json(st.session_state.saved_json_data)
+    
+    # Option to hide the JSON display
+    if st.button("❌ Hide JSON Data"):
+        st.session_state.show_json = False
+        st.rerun()
 
 # Debug information
 with st.expander("🔧 System Info"):
     st.write("**Valves Loaded:**", len(valves))
     st.write("**Pipes Loaded:**", len(st.session_state.pipes))
     st.write("**Selected Pipe:**", st.session_state.selected_pipe)
+    
+    # Show valve data
+    st.subheader("🔧 Valve Data")
+    st.json(valves)
+    
+    # Show current pipe data
     if st.session_state.pipes and st.session_state.selected_pipe is not None:
-        st.write("**Current Pipe Data:**", st.session_state.pipes[st.session_state.selected_pipe])
+        st.subheader("🔧 Current Pipe Data")
+        st.json(st.session_state.pipes[st.session_state.selected_pipe])
+    
     st.write("**Pipes File:**", PIPES_DATA_FILE)
