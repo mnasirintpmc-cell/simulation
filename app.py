@@ -255,18 +255,32 @@ with col2:
                 st.session_state.pipes[st.session_state.selected_pipe] = pipe
                 st.rerun()
         
-        # Manual coordinate input - ALWAYS SHOWS CURRENT LIVE VALUES
+        # LIVE COORDINATE DISPLAY - This updates automatically when pipe moves
+        st.markdown("---")
+        st.subheader("🎯 Current Coordinates (Live)")
+        
+        # Create a container to show live coordinates that update automatically
+        coord_col1, coord_col2 = st.columns(2)
+        with coord_col1:
+            st.metric("X1", pipe["x1"])
+            st.metric("Y1", pipe["y1"])
+        with coord_col2:
+            st.metric("X2", pipe["x2"])
+            st.metric("Y2", pipe["y2"])
+        
+        # Manual coordinate input for precise control
         st.markdown("---")
         st.subheader("🎯 Set Exact Coordinates")
+        st.info("Type coordinates below for precise positioning")
         
-        # These input fields will automatically show the CURRENT pipe coordinates
-        # When you move the pipe with arrows, these numbers update automatically
-        new_x1 = st.number_input("X1", value=pipe["x1"], key="set_x1")
-        new_y1 = st.number_input("Y1", value=pipe["y1"], key="set_y1")
-        new_x2 = st.number_input("X2", value=pipe["x2"], key="set_x2") 
-        new_y2 = st.number_input("Y2", value=pipe["y2"], key="set_y2")
+        # Use unique keys for each pipe to prevent conflicts
+        pipe_key = f"pipe_{st.session_state.selected_pipe}"
+        new_x1 = st.number_input("X1", value=pipe["x1"], key=f"x1_{pipe_key}")
+        new_y1 = st.number_input("Y1", value=pipe["y1"], key=f"y1_{pipe_key}")
+        new_x2 = st.number_input("X2", value=pipe["x2"], key=f"x2_{pipe_key}") 
+        new_y2 = st.number_input("Y2", value=pipe["y2"], key=f"y2_{pipe_key}")
         
-        # Apply coordinates button - only needed if you manually type new numbers
+        # Apply coordinates button - only needed if you manually type numbers
         if st.button("💫 APPLY MANUAL COORDINATES", use_container_width=True):
             pipe["x1"] = new_x1
             pipe["y1"] = new_y1
