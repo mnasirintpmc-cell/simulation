@@ -152,29 +152,6 @@ if "valve_states" not in st.session_state:
 if "selected_pipe" not in st.session_state:
     st.session_state.selected_pipe = 0 if st.session_state.pipes else None
 
-# Initialize coordinate state for real-time updates
-if "current_coords" not in st.session_state:
-    if st.session_state.pipes and st.session_state.selected_pipe is not None:
-        pipe = st.session_state.pipes[st.session_state.selected_pipe]
-        st.session_state.current_coords = {
-            "x1": pipe["x1"],
-            "y1": pipe["y1"], 
-            "x2": pipe["x2"],
-            "y2": pipe["y2"]
-        }
-    else:
-        st.session_state.current_coords = {"x1": 0, "y1": 0, "x2": 0, "y2": 0}
-
-# Update coordinates when pipe selection changes
-if st.session_state.pipes and st.session_state.selected_pipe is not None:
-    current_pipe = st.session_state.pipes[st.session_state.selected_pipe]
-    st.session_state.current_coords = {
-        "x1": current_pipe["x1"],
-        "y1": current_pipe["y1"],
-        "x2": current_pipe["x2"], 
-        "y2": current_pipe["y2"]
-    }
-
 # Main app
 st.title("P&ID Interactive Simulation")
 st.markdown("**🔒 Valves are fixed | 🎯 Pipes are movable**")
@@ -226,13 +203,6 @@ with st.sidebar:
             
             if st.button(label, key=f"pipe_{i}", use_container_width=True):
                 st.session_state.selected_pipe = i
-                # Update coordinates when pipe selection changes
-                st.session_state.current_coords = {
-                    "x1": pipe["x1"],
-                    "y1": pipe["y1"],
-                    "x2": pipe["x2"],
-                    "y2": pipe["y2"]
-                }
                 st.rerun()
 
 # Main content area
@@ -265,74 +235,44 @@ with col2:
                 pipe["y1"] -= 10
                 pipe["y2"] -= 10
                 st.session_state.pipes[st.session_state.selected_pipe] = pipe
-                # Update coordinate display immediately
-                st.session_state.current_coords = {
-                    "x1": pipe["x1"],
-                    "y1": pipe["y1"],
-                    "x2": pipe["x2"],
-                    "y2": pipe["y2"]
-                }
                 st.rerun()
         with col_down:
             if st.button("↓", use_container_width=True):
                 pipe["y1"] += 10
                 pipe["y2"] += 10
                 st.session_state.pipes[st.session_state.selected_pipe] = pipe
-                st.session_state.current_coords = {
-                    "x1": pipe["x1"],
-                    "y1": pipe["y1"],
-                    "x2": pipe["x2"],
-                    "y2": pipe["y2"]
-                }
                 st.rerun()
         with col_left:
             if st.button("←", use_container_width=True):
                 pipe["x1"] -= 10
                 pipe["x2"] -= 10
                 st.session_state.pipes[st.session_state.selected_pipe] = pipe
-                st.session_state.current_coords = {
-                    "x1": pipe["x1"],
-                    "y1": pipe["y1"],
-                    "x2": pipe["x2"],
-                    "y2": pipe["y2"]
-                }
                 st.rerun()
         with col_right:
             if st.button("→", use_container_width=True):
                 pipe["x1"] += 10
                 pipe["x2"] += 10
                 st.session_state.pipes[st.session_state.selected_pipe] = pipe
-                st.session_state.current_coords = {
-                    "x1": pipe["x1"],
-                    "y1": pipe["y1"],
-                    "x2": pipe["x2"],
-                    "y2": pipe["y2"]
-                }
                 st.rerun()
         
-        # Manual coordinate input - ALWAYS SHOWS CURRENT VALUES
+        # Manual coordinate input - ALWAYS SHOWS CURRENT LIVE VALUES
         st.markdown("---")
         st.subheader("🎯 Set Exact Coordinates")
         
-        # Use current coordinates from session state
-        new_x1 = st.number_input("X1", value=st.session_state.current_coords["x1"], key="set_x1")
-        new_y1 = st.number_input("Y1", value=st.session_state.current_coords["y1"], key="set_y1")
-        new_x2 = st.number_input("X2", value=st.session_state.current_coords["x2"], key="set_x2") 
-        new_y2 = st.number_input("Y2", value=st.session_state.current_coords["y2"], key="set_y2")
+        # These input fields will automatically show the CURRENT pipe coordinates
+        # When you move the pipe with arrows, these numbers update automatically
+        new_x1 = st.number_input("X1", value=pipe["x1"], key="set_x1")
+        new_y1 = st.number_input("Y1", value=pipe["y1"], key="set_y1")
+        new_x2 = st.number_input("X2", value=pipe["x2"], key="set_x2") 
+        new_y2 = st.number_input("Y2", value=pipe["y2"], key="set_y2")
         
-        if st.button("💫 APPLY COORDINATES", use_container_width=True):
+        # Apply coordinates button - only needed if you manually type new numbers
+        if st.button("💫 APPLY MANUAL COORDINATES", use_container_width=True):
             pipe["x1"] = new_x1
             pipe["y1"] = new_y1
             pipe["x2"] = new_x2
             pipe["y2"] = new_y2
             st.session_state.pipes[st.session_state.selected_pipe] = pipe
-            # Update coordinate display
-            st.session_state.current_coords = {
-                "x1": new_x1,
-                "y1": new_y1,
-                "x2": new_x2,
-                "y2": new_y2
-            }
             st.rerun()
         
         # Save individual pipe
@@ -346,5 +286,6 @@ with st.expander("🔧 System Info"):
     st.write("**Valves Loaded:**", len(valves))
     st.write("**Pipes Loaded:**", len(st.session_state.pipes))
     st.write("**Selected Pipe:**", st.session_state.selected_pipe)
-    st.write("**Current Coordinates:**", st.session_state.current_coords)
+    if st.session_state.pipes and st.session_state.selected_pipe is not None:
+        st.write("**Current Pipe Data:**", st.session_state.pipes[st.session_state.selected_pipe])
     st.write("**Pipes File:**", PIPES_DATA_FILE)
