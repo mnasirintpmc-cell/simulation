@@ -11,71 +11,20 @@ DATA_FILE = "valves.json"
 PIPES_DATA_FILE = "pipes.json"
 
 def load_valves():
-    """Load valve positions from JSON - VALVES ARE FIXED"""
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
             return json.load(f)
     return {}
 
 def load_pipes():
-    """Load pipe positions from JSON file - PIPES ARE MOVABLE"""
-    try:
-        if os.path.exists(PIPES_DATA_FILE):
-            with open(PIPES_DATA_FILE, "r") as f:
-                pipes_data = json.load(f)
-                if isinstance(pipes_data, list) and len(pipes_data) > 0:
-                    return pipes_data
-        # Return default pipes if file doesn't exist
-        return create_default_pipes()
-    except Exception as e:
-        st.error(f"Error loading pipes: {e}")
-        return create_default_pipes()
-
-def create_default_pipes():
-    """Create default pipe positions"""
-    img_width, img_height = get_image_dimensions()
-    default_pipes = []
-    
-    # Create 8 default pipes in a grid pattern
-    num_pipes = 8
-    cols = 4
-    rows = 2
-    
-    pipe_length = 120
-    spacing_x = img_width // (cols + 1)
-    spacing_y = img_height // (rows + 1)
-    
-    for i in range(num_pipes):
-        row = i // cols
-        col = i % cols
-        
-        center_x = spacing_x * (col + 1)
-        center_y = spacing_y * (row + 1)
-        
-        default_pipe = {
-            "id": i,
-            "x1": center_x - pipe_length // 2,
-            "y1": center_y,
-            "x2": center_x + pipe_length // 2,
-            "y2": center_y,
-            "name": f"Pipe_{i+1}"
-        }
-        default_pipes.append(default_pipe)
-    
-    # Save the default pipes
-    save_pipes(default_pipes)
-    return default_pipes
+    if os.path.exists(PIPES_DATA_FILE):
+        with open(PIPES_DATA_FILE, "r") as f:
+            return json.load(f)
+    return []
 
 def save_pipes(pipes_data):
-    """Save pipe positions to JSON file"""
-    try:
-        with open(PIPES_DATA_FILE, "w") as f:
-            json.dump(pipes_data, f, indent=2)
-        st.success("✅ Pipes saved successfully!")
-        return pipes_data  # Return the saved data
-    except Exception as e:
-        st.error(f"Error saving pipes: {e}")
-        return False
+    with open(PIPES_DATA_FILE, "w") as f:
+        json.dump(pipes_data, f, indent=2)
 
 def get_image_dimensions():
     """Get the dimensions of the P&ID image"""
@@ -85,8 +34,48 @@ def get_image_dimensions():
     except:
         return (1200, 800)  # Default fallback
 
+def is_pipe_visible(pipe, img_width=1200, img_height=800):
+    """Check if pipe coordinates are within image boundaries"""
+    return (0 <= pipe["x1"] <= img_width and 
+            0 <= pipe["x2"] <= img_width and
+            0 <= pipe["y1"] <= img_height and 
+            0 <= pipe["y2"] <= img_height)
+
+def reset_all_pipes_to_visible():
+    """Reset ALL pipes to visible positions"""
+    img_width, img_height = get_image_dimensions()
+    new_pipes = []
+    
+    # Create a grid of positions for all pipes
+    num_pipes = len(st.session_state.pipes)
+    cols = 4  # 4 columns in the grid
+    rows = (num_pipes + cols - 1) // cols  # Calculate rows needed
+    
+    pipe_width = 100  # Default pipe length
+    spacing_x = img_width // (cols + 1)
+    spacing_y = img_height // (rows + 1)
+    
+    for i in range(num_pipes):
+        row = i // cols
+        col = i % cols
+        
+        # Calculate position in grid
+        center_x = spacing_x * (col + 1)
+        center_y = spacing_y * (row + 1)
+        
+        # Create a horizontal pipe at this position
+        new_pipe = {
+            "x1": center_x - pipe_width // 2,
+            "y1": center_y,
+            "x2": center_x + pipe_width // 2,
+            "y2": center_y
+        }
+        new_pipes.append(new_pipe)
+    
+    return new_pipes
+
 def create_pid_with_valves_and_pipes():
-    """Create P&ID image with FIXED valves and MOVABLE pipes"""
+    """Create P&ID image with valve indicators AND pipes"""
     try:
         pid_img = Image.open(PID_FILE).convert("RGBA")
         draw = ImageDraw.Draw(pid_img)
@@ -95,7 +84,7 @@ def create_pid_with_valves_and_pipes():
         # Draw pipes FIRST (so valves appear on top)
         if st.session_state.pipes:
             for i, pipe in enumerate(st.session_state.pipes):
-                # Check if pipe is within reasonable bounds
+                # Check if pipe is within reasonable bounds (not thousands of pixels off)
                 is_reasonable = (
                     -1000 <= pipe["x1"] <= img_width + 1000 and
                     -1000 <= pipe["x2"] <= img_width + 1000 and
@@ -112,15 +101,13 @@ def create_pid_with_valves_and_pipes():
                     if i == st.session_state.selected_pipe:
                         draw.ellipse([pipe["x1"]-6, pipe["y1"]-6, pipe["x1"]+6, pipe["y1"]+6], fill=(255, 0, 0), outline="white", width=2)
                         draw.ellipse([pipe["x2"]-6, pipe["y2"]-6, pipe["x2"]+6, pipe["y2"]+6], fill=(255, 0, 0), outline="white", width=2)
-                        
-                    # Draw pipe name
-                    mid_x = (pipe["x1"] + pipe["x2"]) // 2
-                    mid_y = (pipe["y1"] + pipe["y2"]) // 2
-                    draw.text((mid_x + 10, mid_y - 10), pipe.get("name", f"Pipe_{i+1}"), fill="white", stroke_fill="black", stroke_width=1)
+                else:
+                    # Pipe is way off screen - don't draw it
+                    pass
         
-        # Draw VALVES (FIXED POSITIONS from JSON)
+        # Draw valves on top of pipes
         for tag, data in valves.items():
-            x, y = data["x"], data["y"]  # Fixed positions from JSON
+            x, y = data["x"], data["y"]
             current_state = st.session_state.valve_states[tag]
             
             # Choose color based on valve state
@@ -138,77 +125,66 @@ def create_pid_with_valves_and_pipes():
         except:
             return Image.new("RGB", (1200, 800), (255, 255, 255))
 
-# Load data - VALVES ARE FIXED, PIPES ARE MOVABLE
+# Load valve data
 valves = load_valves()
+pipes = load_pipes()
 
 # Initialize session state
-if "pipes" not in st.session_state:
-    st.session_state.pipes = load_pipes()  # Load pipes from JSON
-
 if "valve_states" not in st.session_state:
-    # Valve states can change, but positions are fixed
     st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
 if "selected_pipe" not in st.session_state:
-    st.session_state.selected_pipe = 0 if st.session_state.pipes else None
+    st.session_state.selected_pipe = 0 if pipes else None
 
-# Initialize for showing JSON data
-if "show_json" not in st.session_state:
-    st.session_state.show_json = False
-if "saved_json_data" not in st.session_state:
-    st.session_state.saved_json_data = None
+if "pipes" not in st.session_state:
+    st.session_state.pipes = pipes
 
 # Main app
 st.title("P&ID Interactive Simulation")
-st.markdown("**🔒 Valves are fixed | 🎯 Pipes are movable**")
 
-# SAVE ALL PIPES BUTTON - Now shows JSON after saving
-st.info("💾 **Move pipes as needed, then click below to PERMANENTLY save positions**")
-if st.button("💾 SAVE ALL PIPE POSITIONS", type="primary", use_container_width=True):
-    saved_data = save_pipes(st.session_state.pipes)
-    if saved_data:
-        st.session_state.saved_json_data = saved_data
-        st.session_state.show_json = True
-        st.success("✅ All pipe positions saved! They will persist after refresh.")
-
-# RESET PIPES BUTTON (if needed)
-if st.button("🔄 RESET ALL PIPES TO DEFAULT", type="secondary", use_container_width=True):
-    st.session_state.pipes = create_default_pipes()
-    st.session_state.selected_pipe = 0
-    st.success("✅ All pipes reset to default positions!")
-    st.rerun()
+# EMERGENCY RESET BUTTON
+if st.session_state.pipes:
+    st.error("🚨 If pipes are not visible, click the button below to RESET ALL PIPES to visible positions!")
+    if st.button("🔄 RESET ALL PIPES TO VISIBLE POSITIONS", type="primary", use_container_width=True):
+        st.session_state.pipes = reset_all_pipes_to_visible()
+        save_pipes(st.session_state.pipes)
+        st.success("✅ All pipes reset to visible positions!")
+        st.rerun()
 
 if not valves:
     st.error("No valves found in valves.json. Please check your configuration.")
     st.stop()
 
-# Create sidebar for controls
+# Show pipe position status
+if st.session_state.pipes and st.session_state.selected_pipe is not None:
+    current_pipe = st.session_state.pipes[st.session_state.selected_pipe]
+    img_width, img_height = get_image_dimensions()
+    
+    # Check if pipe coordinates are reasonable
+    is_reasonable = (
+        -1000 <= current_pipe["x1"] <= img_width + 1000 and
+        -1000 <= current_pipe["x2"] <= img_width + 1000 and
+        -1000 <= current_pipe["y1"] <= img_height + 1000 and
+        -1000 <= current_pipe["y2"] <= img_height + 1000
+    )
+    
+    if not is_reasonable:
+        st.error(f"🚨 Pipe {st.session_state.selected_pipe + 1} coordinates are EXTREMELY OFF-SCREEN! Use RESET button above.")
+
+# Create sidebar for valve controls
 with st.sidebar:
     st.header("🎯 Valve Controls")
     st.markdown("---")
     
-    # Valve toggle buttons - STATES can change, but POSITIONS are fixed
+    # Valve toggle buttons in sidebar
     for tag, data in valves.items():
         current_state = st.session_state.valve_states[tag]
         
-        # Show valve status with color coding
-        status_color = "🔴" if current_state else "🟢"
-        status_text = "OPEN" if current_state else "CLOSED"
-        
-        button_label = f"{status_color} {tag} - {status_text}"
+        button_label = f"🔴 {tag} - OPEN" if current_state else f"🟢 {tag} - CLOSED"
         
         if st.button(button_label, key=f"btn_{tag}", use_container_width=True):
             st.session_state.valve_states[tag] = not current_state
             st.rerun()
-    
-    st.markdown("---")
-    
-    # Show current valve states
-    st.subheader("📊 Current Valve Status")
-    for tag, state in st.session_state.valve_states.items():
-        status_icon = "🔴" if state else "🟢"
-        status_text = "OPEN" if state else "CLOSED"
-        st.write(f"{status_icon} **{tag}**: {status_text}")
     
     st.markdown("---")
     
@@ -218,135 +194,135 @@ with st.sidebar:
         for i in range(len(st.session_state.pipes)):
             is_selected = st.session_state.selected_pipe == i
             pipe = st.session_state.pipes[i]
+            img_width, img_height = get_image_dimensions()
+            
+            # Check if pipe is reasonable
+            is_reasonable = (
+                -1000 <= pipe["x1"] <= img_width + 1000 and
+                -1000 <= pipe["x2"] <= img_width + 1000 and
+                -1000 <= pipe["y1"] <= img_height + 1000 and
+                -1000 <= pipe["y2"] <= img_height + 1000
+            )
             
             status_icon = "🟣" if is_selected else "🔵"
+            if not is_reasonable:
+                status_icon = "🟡"
             
-            label = f"{status_icon} {pipe.get('name', f'Pipe {i+1}')}" 
+            label = f"{status_icon} Pipe {i+1}" 
             
             if st.button(label, key=f"pipe_{i}", use_container_width=True):
                 st.session_state.selected_pipe = i
                 st.rerun()
 
-# Main content area
+# Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
 with col1:
-    # Display the P&ID
+    # Create and display the P&ID with valve indicators AND pipes
     composite_img = create_pid_with_valves_and_pipes()
-    st.image(composite_img, use_container_width=True, caption="🟣 Selected Pipe | 🔵 Normal Pipe | 🔴/🟢 Valve States")
+    st.image(composite_img, use_container_width=True, caption="🟣 Purple = Selected | 🔵 Blue = Normal | 🟡 Yellow = Off-screen (in sidebar)")
 
 with col2:
-    # Pipe controls
-    st.header("🔧 Pipe Controls")
+    # Right sidebar for detailed status
+    st.header("🔍 Details")
     st.markdown("---")
     
+    # Selected pipe info
     if st.session_state.selected_pipe is not None and st.session_state.pipes:
         pipe = st.session_state.pipes[st.session_state.selected_pipe]
+        img_width, img_height = get_image_dimensions()
         
-        st.subheader(f"🟣 {pipe.get('name', f'Pipe {st.session_state.selected_pipe + 1}')}")
+        st.subheader(f"🟣 Pipe {st.session_state.selected_pipe + 1}")
+        st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
+        st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
         
-        # Display current coordinates (LIVE UPDATES)
-        st.write(f"**Start:** ({pipe['x1']}, {pipe['y1']})")
-        st.write(f"**End:** ({pipe['x2']}, {pipe['y2']})")
+        # Check if coordinates are reasonable
+        is_reasonable = (
+            -1000 <= pipe["x1"] <= img_width + 1000 and
+            -1000 <= pipe["x2"] <= img_width + 1000 and
+            -1000 <= pipe["y1"] <= img_height + 1000 and
+            -1000 <= pipe["y2"] <= img_height + 1000
+        )
         
-        # Quick movement controls
-        st.markdown("---")
-        st.subheader("📍 Move Pipe")
-        col_up, col_down, col_left, col_right = st.columns(4)
-        with col_up:
-            if st.button("↑", use_container_width=True):
-                pipe["y1"] -= 10
-                pipe["y2"] -= 10
-                st.session_state.pipes[st.session_state.selected_pipe] = pipe
+        if not is_reasonable:
+            st.error("❌ Coordinates are EXTREMELY off-screen!")
+            st.info("Use the RESET button at the top to fix this pipe.")
+        else:
+            # Calculate current length and orientation
+            length = ((pipe["x2"] - pipe["x1"])**2 + (pipe["y2"] - pipe["y1"])**2)**0.5
+            is_horizontal = abs(pipe["y2"] - pipe["y1"]) < abs(pipe["x2"] - pipe["x1"])
+            orientation = "Horizontal" if is_horizontal else "Vertical"
+            st.write(f"**Length:** {int(length)} pixels")
+            st.write(f"**Orientation:** {orientation}")
+            
+            # QUICK RESET THIS PIPE
+            st.markdown("---")
+            st.subheader("🛠️ Quick Fix")
+            if st.button("🔄 RESET THIS PIPE", use_container_width=True, type="primary"):
+                img_width, img_height = get_image_dimensions()
+                
+                # Move to center with reasonable length
+                center_x = img_width // 2
+                center_y = img_height // 2
+                length = 100
+                
+                pipe["x1"] = center_x - length // 2
+                pipe["y1"] = center_y
+                pipe["x2"] = center_x + length // 2
+                pipe["y2"] = center_y
+                
+                save_pipes(st.session_state.pipes)
+                st.success("✅ Pipe reset to center!")
                 st.rerun()
-        with col_down:
-            if st.button("↓", use_container_width=True):
-                pipe["y1"] += 10
-                pipe["y2"] += 10
-                st.session_state.pipes[st.session_state.selected_pipe] = pipe
+            
+            # Pipe movement controls
+            st.markdown("---")
+            st.subheader("📍 Move Pipe")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if st.button("↑", use_container_width=True):
+                    pipe["y1"] -= 10
+                    pipe["y2"] -= 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            with col2:
+                if st.button("↓", use_container_width=True):
+                    pipe["y1"] += 10
+                    pipe["y2"] += 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            with col3:
+                if st.button("←", use_container_width=True):
+                    pipe["x1"] -= 10
+                    pipe["x2"] -= 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            with col4:
+                if st.button("→", use_container_width=True):
+                    pipe["x1"] += 10
+                    pipe["x2"] += 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            
+            # Manual coordinate input
+            st.markdown("---")
+            st.subheader("🎯 Set Coordinates")
+            new_x1 = st.number_input("X1", value=pipe["x1"], key="set_x1")
+            new_y1 = st.number_input("Y1", value=pipe["y1"], key="set_y1")
+            new_x2 = st.number_input("X2", value=pipe["x2"], key="set_x2") 
+            new_y2 = st.number_input("Y2", value=pipe["y2"], key="set_y2")
+            
+            if st.button("💫 APPLY COORDINATES", use_container_width=True):
+                pipe["x1"] = new_x1
+                pipe["y1"] = new_y1
+                pipe["x2"] = new_x2
+                pipe["y2"] = new_y2
+                save_pipes(st.session_state.pipes)
                 st.rerun()
-        with col_left:
-            if st.button("←", use_container_width=True):
-                pipe["x1"] -= 10
-                pipe["x2"] -= 10
-                st.session_state.pipes[st.session_state.selected_pipe] = pipe
-                st.rerun()
-        with col_right:
-            if st.button("→", use_container_width=True):
-                pipe["x1"] += 10
-                pipe["x2"] += 10
-                st.session_state.pipes[st.session_state.selected_pipe] = pipe
-                st.rerun()
-        
-        # LIVE COORDINATE DISPLAY - This updates automatically when pipe moves
-        st.markdown("---")
-        st.subheader("🎯 Current Coordinates (Live)")
-        
-        # Create a container to show live coordinates that update automatically
-        coord_col1, coord_col2 = st.columns(2)
-        with coord_col1:
-            st.metric("X1", pipe["x1"])
-            st.metric("Y1", pipe["y1"])
-        with coord_col2:
-            st.metric("X2", pipe["x2"])
-            st.metric("Y2", pipe["y2"])
-        
-        # Manual coordinate input for precise control
-        st.markdown("---")
-        st.subheader("🎯 Set Exact Coordinates")
-        st.info("Type coordinates below for precise positioning")
-        
-        # Use unique keys for each pipe to prevent conflicts
-        pipe_key = f"pipe_{st.session_state.selected_pipe}"
-        new_x1 = st.number_input("X1", value=pipe["x1"], key=f"x1_{pipe_key}")
-        new_y1 = st.number_input("Y1", value=pipe["y1"], key=f"y1_{pipe_key}")
-        new_x2 = st.number_input("X2", value=pipe["x2"], key=f"x2_{pipe_key}") 
-        new_y2 = st.number_input("Y2", value=pipe["y2"], key=f"y2_{pipe_key}")
-        
-        # Apply coordinates button - only needed if you manually type numbers
-        if st.button("💫 APPLY MANUAL COORDINATES", use_container_width=True):
-            pipe["x1"] = new_x1
-            pipe["y1"] = new_y1
-            pipe["x2"] = new_x2
-            pipe["y2"] = new_y2
-            st.session_state.pipes[st.session_state.selected_pipe] = pipe
-            st.rerun()
-        
-        # Save individual pipe
-        st.markdown("---")
-        if st.button("💾 SAVE THIS PIPE", use_container_width=True, type="primary"):
-            saved_data = save_pipes(st.session_state.pipes)
-            if saved_data:
-                st.session_state.saved_json_data = saved_data
-                st.session_state.show_json = True
-                st.success("✅ Pipe position saved!")
-
-# Show JSON data after saving
-if st.session_state.show_json and st.session_state.saved_json_data:
-    st.markdown("---")
-    st.header("💾 Saved JSON Data")
-    st.success("Below is the JSON data that was saved to the file:")
-    
-    # Display the JSON in a nice format
-    st.json(st.session_state.saved_json_data)
-    
-    # Option to hide the JSON display
-    if st.button("❌ Hide JSON Data"):
-        st.session_state.show_json = False
-        st.rerun()
 
 # Debug information
-with st.expander("🔧 System Info"):
-    st.write("**Valves Loaded:**", len(valves))
-    st.write("**Pipes Loaded:**", len(st.session_state.pipes))
-    st.write("**Selected Pipe:**", st.session_state.selected_pipe)
-    
-    # Show valve data
-    st.subheader("🔧 Valve Data")
-    st.json(valves)
-    
-    # Show current pipe data
-    if st.session_state.pipes and st.session_state.selected_pipe is not None:
-        st.subheader("🔧 Current Pipe Data")
-        st.json(st.session_state.pipes[st.session_state.selected_pipe])
-    
-    st.write("**Pipes File:**", PIPES_DATA_FILE)
+with st.expander("🔧 Debug Information"):
+    st.write("**Image Dimensions:**", get_image_dimensions())
+    if st.session_state.pipes:
+        st.write("**Pipe 5 Coordinates:**", st.session_state.pipes[4] if len(st.session_state.pipes) > 4 else "Not found")
+    st.write("**All Pipes:**")
+    st.json(st.session_state.pipes)
