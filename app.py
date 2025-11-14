@@ -283,6 +283,52 @@ with col2:
             st.write(f"**Length:** {int(length)} pixels")
             st.write(f"**Orientation:** {orientation}")
             
+            # PIPE ORIENTATION CONTROLS
+            st.markdown("---")
+            st.subheader("📐 Set Pipe Orientation")
+            col_horiz, col_vert = st.columns(2)
+            with col_horiz:
+                if st.button("➖ Horizontal", use_container_width=True):
+                    # Make pipe horizontal (keep center position)
+                    center_x = (pipe["x1"] + pipe["x2"]) // 2
+                    center_y = (pipe["y1"] + pipe["y2"]) // 2
+                    length = 100
+                    
+                    pipe["x1"] = center_x - length // 2
+                    pipe["y1"] = center_y
+                    pipe["x2"] = center_x + length // 2
+                    pipe["y2"] = center_y
+                    
+                    st.session_state.current_coords = {
+                        "x1": pipe["x1"],
+                        "y1": pipe["y1"],
+                        "x2": pipe["x2"],
+                        "y2": pipe["y2"]
+                    }
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            
+            with col_vert:
+                if st.button("➡️ Vertical", use_container_width=True):
+                    # Make pipe vertical (keep center position)
+                    center_x = (pipe["x1"] + pipe["x2"]) // 2
+                    center_y = (pipe["y1"] + pipe["y2"]) // 2
+                    length = 100
+                    
+                    pipe["x1"] = center_x
+                    pipe["y1"] = center_y - length // 2
+                    pipe["x2"] = center_x
+                    pipe["y2"] = center_y + length // 2
+                    
+                    st.session_state.current_coords = {
+                        "x1": pipe["x1"],
+                        "y1": pipe["y1"],
+                        "x2": pipe["x2"],
+                        "y2": pipe["y2"]
+                    }
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            
             # QUICK RESET THIS PIPE
             st.markdown("---")
             st.subheader("🛠️ Quick Fix")
@@ -313,8 +359,8 @@ with col2:
             
             # Pipe movement controls - APPROXIMATE MOVEMENT
             st.markdown("---")
-            st.subheader("📍 Move Pipe (Approximate)")
-            st.info("Use arrows for quick positioning")
+            st.subheader("📍 Move Pipe")
+            st.info("Use arrows for positioning - coordinates update automatically")
             
             col1, col2, col3, col4 = st.columns(4)
             with col1:
@@ -357,61 +403,6 @@ with col2:
                 if st.button("→", use_container_width=True):
                     pipe["x1"] += 10
                     pipe["x2"] += 10
-                    st.session_state.current_coords = {
-                        "x1": pipe["x1"],
-                        "y1": pipe["y1"],
-                        "x2": pipe["x2"],
-                        "y2": pipe["y2"]
-                    }
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            
-            # FINE MOVEMENT CONTROLS
-            st.markdown("---")
-            st.subheader("🎯 Fine Movement")
-            st.info("Use +/- for precise adjustments")
-            
-            fine_col1, fine_col2, fine_col3, fine_col4 = st.columns(4)
-            with fine_col1:
-                if st.button("+Y", use_container_width=True):
-                    pipe["y1"] += 1
-                    pipe["y2"] += 1
-                    st.session_state.current_coords = {
-                        "x1": pipe["x1"],
-                        "y1": pipe["y1"],
-                        "x2": pipe["x2"],
-                        "y2": pipe["y2"]
-                    }
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            with fine_col2:
-                if st.button("-Y", use_container_width=True):
-                    pipe["y1"] -= 1
-                    pipe["y2"] -= 1
-                    st.session_state.current_coords = {
-                        "x1": pipe["x1"],
-                        "y1": pipe["y1"],
-                        "x2": pipe["x2"],
-                        "y2": pipe["y2"]
-                    }
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            with fine_col3:
-                if st.button("+X", use_container_width=True):
-                    pipe["x1"] += 1
-                    pipe["x2"] += 1
-                    st.session_state.current_coords = {
-                        "x1": pipe["x1"],
-                        "y1": pipe["y1"],
-                        "x2": pipe["x2"],
-                        "y2": pipe["y2"]
-                    }
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            with fine_col4:
-                if st.button("-X", use_container_width=True):
-                    pipe["x1"] -= 1
-                    pipe["x2"] -= 1
                     st.session_state.current_coords = {
                         "x1": pipe["x1"],
                         "y1": pipe["y1"],
