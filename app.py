@@ -142,11 +142,11 @@ if "pipes" not in st.session_state:
 # Main app
 st.title("P&ID Interactive Simulation")
 
-# SAVE ALL PIPES BUTTON
-st.info("💾 **Move pipes as needed, then click below to PERMANENTLY save positions**")
-if st.button("💾 SAVE ALL PIPE POSITIONS", type="primary", use_container_width=True):
+# SAVE ALL PIPES BUTTON (still useful for manual saving)
+st.info("💾 **Pipe positions are automatically saved when you move them**")
+if st.button("💾 MANUALLY SAVE ALL PIPE POSITIONS", type="primary", use_container_width=True):
     save_pipes(st.session_state.pipes)
-    st.success("✅ All pipe positions saved! They will persist after refresh.")
+    st.success("✅ All pipe positions saved!")
 
 # EMERGENCY RESET BUTTON
 if st.session_state.pipes:
@@ -262,7 +262,7 @@ with col2:
             st.write(f"**Length:** {int(length)} pixels")
             st.write(f"**Orientation:** {orientation}")
             
-            # PIPE ORIENTATION CONTROLS
+            # PIPE ORIENTATION CONTROLS - AUTO SAVE
             st.markdown("---")
             st.subheader("📐 Set Pipe Orientation")
             col_horiz, col_vert = st.columns(2)
@@ -278,6 +278,7 @@ with col2:
                     pipe["x2"] = center_x + length // 2
                     pipe["y2"] = center_y
                     
+                    # AUTO SAVE to pipes.json
                     save_pipes(st.session_state.pipes)
                     st.rerun()
             
@@ -293,10 +294,11 @@ with col2:
                     pipe["x2"] = center_x
                     pipe["y2"] = center_y + length // 2
                     
+                    # AUTO SAVE to pipes.json
                     save_pipes(st.session_state.pipes)
                     st.rerun()
             
-            # QUICK RESET THIS PIPE
+            # QUICK RESET THIS PIPE - AUTO SAVE
             st.markdown("---")
             st.subheader("🛠️ Quick Fix")
             if st.button("🔄 RESET THIS PIPE", use_container_width=True, type="secondary"):
@@ -312,73 +314,65 @@ with col2:
                 pipe["x2"] = center_x + length // 2
                 pipe["y2"] = center_y
                 
+                # AUTO SAVE to pipes.json
                 save_pipes(st.session_state.pipes)
                 st.success("✅ Pipe reset to center!")
                 st.rerun()
             
-            # Pipe movement controls - APPROXIMATE MOVEMENT
+            # Pipe movement controls - AUTO SAVE ON EVERY MOVE
             st.markdown("---")
             st.subheader("📍 Move Pipe")
-            st.info("Use arrows for positioning")
+            st.info("✅ Positions automatically saved to pipes.json")
             
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 if st.button("↑", use_container_width=True):
                     pipe["y1"] -= 10
                     pipe["y2"] -= 10
+                    # AUTO SAVE to pipes.json
                     save_pipes(st.session_state.pipes)
                     st.rerun()
             with col2:
                 if st.button("↓", use_container_width=True):
                     pipe["y1"] += 10
                     pipe["y2"] += 10
+                    # AUTO SAVE to pipes.json
                     save_pipes(st.session_state.pipes)
                     st.rerun()
             with col3:
                 if st.button("←", use_container_width=True):
                     pipe["x1"] -= 10
                     pipe["x2"] -= 10
+                    # AUTO SAVE to pipes.json
                     save_pipes(st.session_state.pipes)
                     st.rerun()
             with col4:
                 if st.button("→", use_container_width=True):
                     pipe["x1"] += 10
                     pipe["x2"] += 10
+                    # AUTO SAVE to pipes.json
                     save_pipes(st.session_state.pipes)
                     st.rerun()
             
-            # Manual coordinate input - ALWAYS SHOWS CURRENT PIPE COORDINATES
+            # Manual coordinate input - AUTO SAVE
             st.markdown("---")
-            st.subheader("🎯 Current Coordinates")
-            st.info("These fields ALWAYS show the current pipe position")
-            
-            # Create a display that shows current coordinates (read-only style)
-            coord_col1, coord_col2 = st.columns(2)
-            with coord_col1:
-                st.text_input("X1", value=str(pipe["x1"]), key="display_x1", disabled=True)
-                st.text_input("Y1", value=str(pipe["y1"]), key="display_y1", disabled=True)
-            with coord_col2:
-                st.text_input("X2", value=str(pipe["x2"]), key="display_x2", disabled=True) 
-                st.text_input("Y2", value=str(pipe["y2"]), key="display_y2", disabled=True)
-            
-            # Manual coordinate input for when you want to type exact values
-            st.markdown("---")
-            st.subheader("✏️ Set Exact Coordinates")
-            st.info("Type new coordinates below and click APPLY")
+            st.subheader("🎯 Set Exact Coordinates")
+            st.info("Type coordinates and click APPLY - will auto-save")
             
             # Use unique keys based on pipe selection to avoid conflicts
             pipe_key = f"manual_{st.session_state.selected_pipe}"
-            new_x1 = st.number_input("New X1", value=pipe["x1"], key=f"new_x1_{pipe_key}")
-            new_y1 = st.number_input("New Y1", value=pipe["y1"], key=f"new_y1_{pipe_key}")
-            new_x2 = st.number_input("New X2", value=pipe["x2"], key=f"new_x2_{pipe_key}") 
-            new_y2 = st.number_input("New Y2", value=pipe["y2"], key=f"new_y2_{pipe_key}")
+            new_x1 = st.number_input("X1", value=pipe["x1"], key=f"new_x1_{pipe_key}")
+            new_y1 = st.number_input("Y1", value=pipe["y1"], key=f"new_y1_{pipe_key}")
+            new_x2 = st.number_input("X2", value=pipe["x2"], key=f"new_x2_{pipe_key}") 
+            new_y2 = st.number_input("Y2", value=pipe["y2"], key=f"new_y2_{pipe_key}")
             
-            # Apply coordinates button - only needed if you manually type new numbers
-            if st.button("💫 APPLY NEW COORDINATES", use_container_width=True, type="primary"):
+            # Apply coordinates button - AUTO SAVES
+            if st.button("💫 APPLY COORDINATES", use_container_width=True, type="primary"):
                 pipe["x1"] = new_x1
                 pipe["y1"] = new_y1
                 pipe["x2"] = new_x2
                 pipe["y2"] = new_y2
+                # AUTO SAVE to pipes.json
                 save_pipes(st.session_state.pipes)
                 st.rerun()
 
