@@ -1,4 +1,3 @@
-
 import streamlit as st
 import json
 from PIL import Image, ImageDraw
@@ -42,39 +41,6 @@ def is_pipe_visible(pipe, img_width=1200, img_height=800):
             0 <= pipe["y1"] <= img_height and 
             0 <= pipe["y2"] <= img_height)
 
-def reset_all_pipes_to_visible():
-    """Reset ALL pipes to visible positions"""
-    img_width, img_height = get_image_dimensions()
-    new_pipes = []
-    
-    # Create a grid of positions for all pipes
-    num_pipes = len(st.session_state.pipes)
-    cols = 4  # 4 columns in the grid
-    rows = (num_pipes + cols - 1) // cols  # Calculate rows needed
-    
-    pipe_width = 100  # Default pipe length
-    spacing_x = img_width // (cols + 1)
-    spacing_y = img_height // (rows + 1)
-    
-    for i in range(num_pipes):
-        row = i // cols
-        col = i % cols
-        
-        # Calculate position in grid
-        center_x = spacing_x * (col + 1)
-        center_y = spacing_y * (row + 1)
-        
-        # Create a horizontal pipe at this position
-        new_pipe = {
-            "x1": center_x - pipe_width // 2,
-            "y1": center_y,
-            "x2": center_x + pipe_width // 2,
-            "y2": center_y
-        }
-        new_pipes.append(new_pipe)
-    
-    return new_pipes
-
 def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states):
     """Determine pipe color based on upstream valve state"""
     pipe = pipe_coords
@@ -114,10 +80,23 @@ def create_pid_with_valves_and_pipes():
                 )
                 
                 if is_reasonable:
-                    # Get pipe color based on upstream valve state
-                    color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
-                    width = 6
+                    # Get base color based on upstream valve state
+                    base_color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
+                    
+                    # If this pipe is selected, make it purple regardless of valve state
+                    if i == st.session_state.selected_pipe:
+                        color = (148, 0, 211)  # Purple for selected pipe
+                        width = 8
+                    else:
+                        color = base_color
+                        width = 6
+                        
                     draw.line([(pipe["x1"], pipe["y1"]), (pipe["x2"], pipe["y2"])], fill=color, width=width)
+                    
+                    # Draw endpoints for selected pipe
+                    if i == st.session_state.selected_pipe:
+                        draw.ellipse([pipe["x1"]-6, pipe["y1"]-6, pipe["x1"]+6, pipe["y1"]+6], fill=(255, 0, 0), outline="white", width=2)
+                        draw.ellipse([pipe["x2"]-6, pipe["y2"]-6, pipe["x2"]+6, pipe["y2"]+6], fill=(255, 0, 0), outline="white", width=2)
                 else:
                     # Pipe is way off screen - don't draw it
                     pass
@@ -159,20 +138,11 @@ if "pipes" not in st.session_state:
 # Main app
 st.title("P&ID Interactive Simulation")
 
-# EMERGENCY RESET BUTTON
-if st.session_state.pipes:
-    st.error("🚨 If pipes are not visible, click the button below to RESET ALL PIPES to visible positions!")
-    if st.button("🔄 RESET ALL PIPES TO VISIBLE POSITIONS", type="primary", use_container_width=True):
-        st.session_state.pipes = reset_all_pipes_to_visible()
-        save_pipes(st.session_state.pipes)
-        st.success("✅ All pipes reset to visible positions!")
-        st.rerun()
-
 if not valves:
     st.error("No valves found in valves.json. Please check your configuration.")
     st.stop()
 
-# Create sidebar for valve controls
+# Create sidebar for valve controls AND pipe selection
 with st.sidebar:
     st.header("🎯 Valve Controls")
     st.markdown("---")
@@ -188,16 +158,40 @@ with st.sidebar:
             st.rerun()
     
     st.markdown("---")
-    st.header("📋 Valve-Pipe Connections")
-    st.markdown("Pipes turn **green** when upstream valves are **OPEN**")
-    st.markdown("Pipes stay **blue** when upstream valves are **CLOSED**")
+    st.header("📋 Pipe Selection")
+    st.markdown("Click on a pipe to highlight it")
+    
+    # Pipe selection buttons
+    if st.session_state.pipes:
+        for i in range(len(st.session_state.pipes)):
+            is_selected = st.session_state.selected_pipe == i
+            pipe = st.session_state.pipes[i]
+            img_width, img_height = get_image_dimensions()
+            
+            # Check if pipe is reasonable
+            is_reasonable = (
+                -1000 <= pipe["x1"] <= img_width + 1000 and
+                -1000 <= pipe["x2"] <= img_width + 1000 and
+                -1000 <= pipe["y1"] <= img_height + 1000 and
+                -1000 <= pipe["y2"] <= img_height + 1000
+            )
+            
+            status_icon = "🟣" if is_selected else "🔵"
+            if not is_reasonable:
+                status_icon = "🟡"
+            
+            label = f"{status_icon} Pipe {i+1}" 
+            
+            if st.button(label, key=f"pipe_{i}", use_container_width=True):
+                st.session_state.selected_pipe = i
+                st.rerun()
 
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
 with col1:
     # Create and display the P&ID with valve indicators AND pipes
     composite_img = create_pid_with_valves_and_pipes()
-    st.image(composite_img, use_container_width=True, caption="🟢 Green = Flow Active | 🔵 Blue = No Flow")
+    st.image(composite_img, use_container_width=True, caption="🟣 Purple = Selected | 🟢 Green = Flow Active | 🔵 Blue = No Flow")
 
 with col2:
     # Right sidebar for detailed status
@@ -224,11 +218,25 @@ with col2:
         st.write(f"**Open Valves:** {open_valves}")
         st.write(f"**Closed Valves:** {closed_valves}")
         
+        # Show selected pipe info
+        if st.session_state.selected_pipe is not None:
+            st.markdown("---")
+            st.subheader(f"🟣 Selected Pipe {st.session_state.selected_pipe + 1}")
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
+            st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
+            
+            # Check flow status for selected pipe
+            color = get_pipe_color_based_on_valves(st.session_state.selected_pipe, pipe, valves, st.session_state.valve_states)
+            flow_status = "🟢 ACTIVE FLOW" if color == (0, 255, 0) else "🔵 NO FLOW"
+            st.write(f"**Flow Status:** {flow_status}")
+        
         st.markdown("---")
         st.subheader("🔧 How It Works")
         st.markdown("""
         - **Open a valve** → Connected pipes turn **GREEN**
         - **Close a valve** → Connected pipes turn **BLUE**
+        - **Click a pipe** → Highlights it in **PURPLE**
         - Valve connects to pipe if it's near the pipe's **start point (x1)**
         """)
 
