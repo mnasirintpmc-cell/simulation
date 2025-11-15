@@ -74,6 +74,26 @@ def reset_all_pipes_to_visible():
     
     return new_pipes
 
+def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states):
+    """Determine pipe color based on upstream valve state"""
+    pipe = pipe_coords
+    x1, y1 = pipe["x1"], pipe["y1"]  # Start point (upstream)
+    
+    # Find valves near the upstream point (x1, y1)
+    valve_proximity_threshold = 20  # pixels
+    
+    for tag, valve_data in valves.items():
+        valve_x, valve_y = valve_data["x"], valve_data["y"]
+        
+        # Calculate distance between pipe start and valve
+        distance = ((valve_x - x1)**2 + (valve_y - y1)**2)**0.5
+        
+        # If valve is close to pipe start point and is open, make pipe green
+        if distance <= valve_proximity_threshold and valve_states[tag]:
+            return (0, 255, 0)  # Green for active flow
+    
+    return (0, 0, 255)  # Blue for no flow
+
 def create_pid_with_valves_and_pipes():
     """Create P&ID image with valve indicators AND pipes"""
     try:
@@ -93,12 +113,10 @@ def create_pid_with_valves_and_pipes():
                 )
                 
                 if is_reasonable:
-                    # Don't highlight any pipe as selected - all pipes will be blue
-                    color = (0, 0, 255)  # Blue for all pipes
-                    width = 6  # Standard width for all pipes
+                    # Get pipe color based on upstream valve state
+                    color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
+                    width = 6
                     draw.line([(pipe["x1"], pipe["y1"]), (pipe["x2"], pipe["y2"])], fill=color, width=width)
-                    
-                    # Don't draw endpoints since no pipe is selected
                 else:
                     # Pipe is way off screen - don't draw it
                     pass
@@ -153,22 +171,6 @@ if not valves:
     st.error("No valves found in valves.json. Please check your configuration.")
     st.stop()
 
-# Show pipe position status
-if st.session_state.pipes and st.session_state.selected_pipe is not None:
-    current_pipe = st.session_state.pipes[st.session_state.selected_pipe]
-    img_width, img_height = get_image_dimensions()
-    
-    # Check if pipe coordinates are reasonable
-    is_reasonable = (
-        -1000 <= current_pipe["x1"] <= img_width + 1000 and
-        -1000 <= current_pipe["x2"] <= img_width + 1000 and
-        -1000 <= current_pipe["y1"] <= img_height + 1000 and
-        -1000 <= current_pipe["y2"] <= img_height + 1000
-    )
-    
-    if not is_reasonable:
-        st.error(f"🚨 Pipe {st.session_state.selected_pipe + 1} coordinates are EXTREMELY OFF-SCREEN! Use RESET button above.")
-
 # Create sidebar for valve controls
 with st.sidebar:
     st.header("🎯 Valve Controls")
@@ -183,34 +185,65 @@ with st.sidebar:
         if st.button(button_label, key=f"btn_{tag}", use_container_width=True):
             st.session_state.valve_states[tag] = not current_state
             st.rerun()
+    
+    st.markdown("---")
+    st.header("📋 Valve-Pipe Connections")
+    st.markdown("Pipes turn **green** when upstream valves are **OPEN**")
+    st.markdown("Pipes stay **blue** when upstream valves are **CLOSED**")
 
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
 with col1:
     # Create and display the P&ID with valve indicators AND pipes
     composite_img = create_pid_with_valves_and_pipes()
-    st.image(composite_img, use_container_width=True, caption="🔵 Blue = Normal Pipes")
+    st.image(composite_img, use_container_width=True, caption="🟢 Green = Flow Active | 🔵 Blue = No Flow")
 
 with col2:
     # Right sidebar for detailed status
-    st.header("🔍 Details")
+    st.header("🔍 Flow Status")
     st.markdown("---")
     
-    # Show general pipe information instead of selected pipe info
+    # Show valve status and pipe flow information
     if st.session_state.pipes:
-        st.subheader("📊 Pipe System")
-        st.write(f"**Total Pipes:** {len(st.session_state.pipes)}")
-        st.write(f"**Total Valves:** {len(valves)}")
+        st.subheader("📊 System Status")
+        
+        # Count pipes with active flow
+        active_pipes = 0
+        for i, pipe in enumerate(st.session_state.pipes):
+            color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
+            if color == (0, 255, 0):  # Green
+                active_pipes += 1
+        
+        st.write(f"**Active Flow Pipes:** {active_pipes}")
+        st.write(f"**No Flow Pipes:** {len(st.session_state.pipes) - active_pipes}")
         
         # Show valve status summary
         open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
         closed_valves = len(valves) - open_valves
         st.write(f"**Open Valves:** {open_valves}")
         st.write(f"**Closed Valves:** {closed_valves}")
+        
+        st.markdown("---")
+        st.subheader("🔧 How It Works")
+        st.markdown("""
+        - **Open a valve** → Connected pipes turn **GREEN**
+        - **Close a valve** → Connected pipes turn **BLUE**
+        - Valve connects to pipe if it's near the pipe's **start point (x1)**
+        """)
 
 # Debug information
 with st.expander("🔧 Debug Information"):
     st.write("**Image Dimensions:**", get_image_dimensions())
+    
+    # Show valve-pipe connections
+    st.subheader("Valve-Pipe Proximity Check")
+    for i, pipe in enumerate(st.session_state.pipes):
+        st.write(f"**Pipe {i+1}** (x1:{pipe['x1']}, y1:{pipe['y1']}):")
+        for tag, valve_data in valves.items():
+            distance = ((valve_data["x"] - pipe["x1"])**2 + (valve_data["y"] - pipe["y1"])**2)**0.5
+            if distance <= 20:  # Same threshold as in get_pipe_color_based_on_valves
+                st.write(f"  - Connected to {tag} (distance: {distance:.1f}px)")
+    
     if st.session_state.pipes:
         st.write("**Pipe 1 Coordinates:**", st.session_state.pipes[0] if len(st.session_state.pipes) > 0 else "Not found")
     st.write("**All Pipes:**")
