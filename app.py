@@ -93,14 +93,12 @@ def create_pid_with_valves_and_pipes():
                 )
                 
                 if is_reasonable:
-                    color = (148, 0, 211) if i == st.session_state.selected_pipe else (0, 0, 255)  # Purple for selected
-                    width = 8 if i == st.session_state.selected_pipe else 6
+                    # Don't highlight any pipe as selected - all pipes will be blue
+                    color = (0, 0, 255)  # Blue for all pipes
+                    width = 6  # Standard width for all pipes
                     draw.line([(pipe["x1"], pipe["y1"]), (pipe["x2"], pipe["y2"])], fill=color, width=width)
                     
-                    # Draw endpoints for selected pipe
-                    if i == st.session_state.selected_pipe:
-                        draw.ellipse([pipe["x1"]-6, pipe["y1"]-6, pipe["x1"]+6, pipe["y1"]+6], fill=(255, 0, 0), outline="white", width=2)
-                        draw.ellipse([pipe["x2"]-6, pipe["y2"]-6, pipe["x2"]+6, pipe["y2"]+6], fill=(255, 0, 0), outline="white", width=2)
+                    # Don't draw endpoints since no pipe is selected
                 else:
                     # Pipe is way off screen - don't draw it
                     pass
@@ -134,7 +132,7 @@ if "valve_states" not in st.session_state:
     st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
 if "selected_pipe" not in st.session_state:
-    st.session_state.selected_pipe = 0 if pipes else None
+    st.session_state.selected_pipe = None  # No pipe selected by default
 
 if "pipes" not in st.session_state:
     st.session_state.pipes = pipes
@@ -191,45 +189,29 @@ col1, col2 = st.columns([3, 1])
 with col1:
     # Create and display the P&ID with valve indicators AND pipes
     composite_img = create_pid_with_valves_and_pipes()
-    st.image(composite_img, use_container_width=True, caption="🟣 Purple = Selected | 🔵 Blue = Normal | 🟡 Yellow = Off-screen (in sidebar)")
+    st.image(composite_img, use_container_width=True, caption="🔵 Blue = Normal Pipes")
 
 with col2:
     # Right sidebar for detailed status
     st.header("🔍 Details")
     st.markdown("---")
     
-    # Selected pipe info
-    if st.session_state.selected_pipe is not None and st.session_state.pipes:
-        pipe = st.session_state.pipes[st.session_state.selected_pipe]
-        img_width, img_height = get_image_dimensions()
+    # Show general pipe information instead of selected pipe info
+    if st.session_state.pipes:
+        st.subheader("📊 Pipe System")
+        st.write(f"**Total Pipes:** {len(st.session_state.pipes)}")
+        st.write(f"**Total Valves:** {len(valves)}")
         
-        st.subheader(f"🟣 Pipe {st.session_state.selected_pipe + 1}")
-        st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
-        st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
-        
-        # Check if coordinates are reasonable
-        is_reasonable = (
-            -1000 <= pipe["x1"] <= img_width + 1000 and
-            -1000 <= pipe["x2"] <= img_width + 1000 and
-            -1000 <= pipe["y1"] <= img_height + 1000 and
-            -1000 <= pipe["y2"] <= img_height + 1000
-        )
-        
-        if not is_reasonable:
-            st.error("❌ Coordinates are EXTREMELY off-screen!")
-            st.info("Use the RESET button at the top to fix this pipe.")
-        else:
-            # Calculate current length and orientation
-            length = ((pipe["x2"] - pipe["x1"])**2 + (pipe["y2"] - pipe["y1"])**2)**0.5
-            is_horizontal = abs(pipe["y2"] - pipe["y1"]) < abs(pipe["x2"] - pipe["x1"])
-            orientation = "Horizontal" if is_horizontal else "Vertical"
-            st.write(f"**Length:** {int(length)} pixels")
-            st.write(f"**Orientation:** {orientation}")
+        # Show valve status summary
+        open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
+        closed_valves = len(valves) - open_valves
+        st.write(f"**Open Valves:** {open_valves}")
+        st.write(f"**Closed Valves:** {closed_valves}")
 
 # Debug information
 with st.expander("🔧 Debug Information"):
     st.write("**Image Dimensions:**", get_image_dimensions())
     if st.session_state.pipes:
-        st.write("**Pipe 5 Coordinates:**", st.session_state.pipes[4] if len(st.session_state.pipes) > 4 else "Not found")
+        st.write("**Pipe 1 Coordinates:**", st.session_state.pipes[0] if len(st.session_state.pipes) > 0 else "Not found")
     st.write("**All Pipes:**")
     st.json(st.session_state.pipes)
