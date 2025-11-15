@@ -57,6 +57,12 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
         18: 10   # Pipe 19 follows pipe 11 (index 18 follows index 10)
     }
     
+    # V-101 OVERRIDE: If V-101 is closed, force pipes 3,4,22,21 to stay blue
+    if "V-101" in valve_states and not valve_states["V-101"]:
+        override_pipes = [2, 3, 21, 20]  # Pipes 3,4,22,21 (0-indexed)
+        if pipe_index in override_pipes:
+            return (0, 0, 255)  # Force blue color
+    
     # Check if this pipe depends on another pipe
     if pipe_index in pipe_dependencies:
         leader_pipe_index = pipe_dependencies[pipe_index]
@@ -237,6 +243,16 @@ with col2:
         st.write(f"**Open Valves:** {open_valves}")
         st.write(f"**Closed Valves:** {closed_valves}")
         
+        # Show V-101 override status
+        if "V-101" in st.session_state.valve_states:
+            v101_status = "CLOSED" if not st.session_state.valve_states["V-101"] else "OPEN"
+            status_color = "🔵" if not st.session_state.valve_states["V-101"] else "🟢"
+            st.markdown("---")
+            st.subheader("🎛️ Special Override")
+            st.write(f"{status_color} **V-101 is {v101_status}**")
+            if not st.session_state.valve_states["V-101"]:
+                st.info("Pipes 3, 4, 22, 21 are forced to BLUE (no flow)")
+        
         # Show pipe dependencies
         st.markdown("---")
         st.subheader("🔗 Pipe Dependencies")
@@ -245,6 +261,7 @@ with col2:
         - **Pipes 3, 4, 22, 21** follow Pipe 2  
         - **Pipes 19, 10** follow Pipe 11
         - **Pipe 14** follows Pipe 11
+        - **V-101 CLOSED** → Pipes 3,4,22,21 forced to BLUE
         """)
         
         # Show selected pipe info
@@ -267,6 +284,7 @@ with col2:
         - **Close a valve** → Connected pipes turn **BLUE**
         - **Click a pipe** → Highlights it in **PURPLE**
         - Some pipes follow the color of other pipes (see dependencies)
+        - **V-101 CLOSED** → Forces pipes 3,4,22,21 to stay BLUE
         - Valve connects to pipe if it's near the pipe's **start point (x1)**
         """)
 
