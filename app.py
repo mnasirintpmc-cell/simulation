@@ -1,203 +1,328 @@
 import streamlit as st
 import json
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import os
-import math
-import time
 
 st.set_page_config(layout="wide")
 
-# ----------------------------------------------------------------------
-# CONFIG
-# ----------------------------------------------------------------------
-PID_FILE       = "P&ID.png"
-VALVES_FILE    = "valves.json"
-PIPES_FILE     = "pipes.json"
+# Configuration
+PID_FILE = "P&ID.png"
+DATA_FILE = "valves.json"
+PIPES_DATA_FILE = "pipes.json"
 
-# ----------------------------------------------------------------------
-# 1. CACHED P&ID LOADER
-# ----------------------------------------------------------------------
-@st.cache_data
-def load_pid_image():
-    try:
-        return Image.open(PID_FILE).convert("RGBA")
-    except Exception as e:
-        st.error(f"Failed to load {PID_FILE}: {e}")
-        return Image.new("RGBA", (1200, 800), (240, 240, 240, 255))
-
-base = load_pid_image()
-
-# ----------------------------------------------------------------------
-# 2. LOAD VALVES
-# ----------------------------------------------------------------------
 def load_valves():
-    if not os.path.exists(VALVES_FILE):
-        st.error(f"Missing {VALVES_FILE}")
-        st.stop()
-    with open(VALVES_FILE) as f:
-        return json.load(f)
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-valves = load_valves()
-
-# ----------------------------------------------------------------------
-# 3. LOAD & AUTO-SCALE PIPES
-# ----------------------------------------------------------------------
 def load_pipes():
-    if not os.path.exists(PIPES_FILE):
-        st.warning(f"Missing {PIPES_FILE} – no pipes will be shown")
-        return []
+    if os.path.exists(PIPES_DATA_FILE):
+        with open(PIPES_DATA_FILE, "r") as f:
+            return json.load(f)
+    return []
 
-    with open(PIPES_FILE) as f:
-        raw = json.load(f)
+def save_pipes(pipes_data):
+    with open(PIPES_DATA_FILE, "w") as f:
+        json.dump(pipes_data, f, indent=2)
 
-    raw = raw.get("lines", raw) if isinstance(raw, dict) else raw
-
-    # ---- get real P&ID size ----
+def get_image_dimensions():
+    """Get the dimensions of the P&ID image"""
     try:
-        pid_w, pid_h = Image.open(PID_FILE).size
+        with Image.open(PID_FILE) as img:
+            return img.size
     except:
-        pid_w, pid_h = 1200, 800
+        return (1200, 800)  # Default fallback
 
-    # ---- estimate Figma canvas from max coordinate ----
-    if raw:
-        max_x = max(max(p["x1"], p["x2"]) for p in raw)
-        max_y = max(max(p["y1"], p["y2"]) for p in raw)
-        figma_w = max(max_x, 184)
-        figma_h = max(max_y, 259)
-    else:
-        figma_w, figma_h = 184, 259
+def is_pipe_visible(pipe, img_width=1200, img_height=800):
+    """Check if pipe coordinates are within image boundaries"""
+    return (0 <= pipe["x1"] <= img_width and 
+            0 <= pipe["x2"] <= img_width and
+            0 <= pipe["y1"] <= img_height and 
+            0 <= pipe["y2"] <= img_height)
 
-    sx = pid_w / figma_w
-    sy = pid_h / figma_h
+def reset_all_pipes_to_visible():
+    """Reset ALL pipes to visible positions"""
+    img_width, img_height = get_image_dimensions()
+    new_pipes = []
+    
+    # Create a grid of positions for all pipes
+    num_pipes = len(st.session_state.pipes)
+    cols = 4  # 4 columns in the grid
+    rows = (num_pipes + cols - 1) // cols  # Calculate rows needed
+    
+    pipe_width = 100  # Default pipe length
+    spacing_x = img_width // (cols + 1)
+    spacing_y = img_height // (rows + 1)
+    
+    for i in range(num_pipes):
+        row = i // cols
+        col = i % cols
+        
+        # Calculate position in grid
+        center_x = spacing_x * (col + 1)
+        center_y = spacing_y * (row + 1)
+        
+        # Create a horizontal pipe at this position
+        new_pipe = {
+            "x1": center_x - pipe_width // 2,
+            "y1": center_y,
+            "x2": center_x + pipe_width // 2,
+            "y2": center_y
+        }
+        new_pipes.append(new_pipe)
+    
+    return new_pipes
 
-    scaled = []
-    for p in raw:
-        scaled.append({
-            "x1": int(p["x1"] * sx),
-            "y1": int(p["y1"] * sy),
-            "x2": int(p["x2"] * sx),
-            "y2": int(p["y2"] * sy)
-        })
-    return scaled
+def create_pid_with_valves_and_pipes():
+    """Create P&ID image with valve indicators AND pipes"""
+    try:
+        pid_img = Image.open(PID_FILE).convert("RGBA")
+        draw = ImageDraw.Draw(pid_img)
+        img_width, img_height = pid_img.size
+        
+        # Draw pipes FIRST (so valves appear on top)
+        if st.session_state.pipes:
+            for i, pipe in enumerate(st.session_state.pipes):
+                # Check if pipe is within reasonable bounds (not thousands of pixels off)
+                is_reasonable = (
+                    -1000 <= pipe["x1"] <= img_width + 1000 and
+                    -1000 <= pipe["x2"] <= img_width + 1000 and
+                    -1000 <= pipe["y1"] <= img_height + 1000 and
+                    -1000 <= pipe["y2"] <= img_height + 1000
+                )
+                
+                if is_reasonable:
+                    color = (148, 0, 211) if i == st.session_state.selected_pipe else (0, 0, 255)  # Purple for selected
+                    width = 8 if i == st.session_state.selected_pipe else 6
+                    draw.line([(pipe["x1"], pipe["y1"]), (pipe["x2"], pipe["y2"])], fill=color, width=width)
+                    
+                    # Draw endpoints for selected pipe
+                    if i == st.session_state.selected_pipe:
+                        draw.ellipse([pipe["x1"]-6, pipe["y1"]-6, pipe["x1"]+6, pipe["y1"]+6], fill=(255, 0, 0), outline="white", width=2)
+                        draw.ellipse([pipe["x2"]-6, pipe["y2"]-6, pipe["x2"]+6, pipe["y2"]+6], fill=(255, 0, 0), outline="white", width=2)
+                else:
+                    # Pipe is way off screen - don't draw it
+                    pass
+        
+        # Draw valves on top of pipes
+        for tag, data in valves.items():
+            x, y = data["x"], data["y"]
+            current_state = st.session_state.valve_states[tag]
+            
+            # Choose color based on valve state
+            color = (0, 255, 0) if current_state else (255, 0, 0)
+            
+            # Draw valve indicator
+            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
+            draw.text((x+12, y-10), tag, fill="white", stroke_fill="black", stroke_width=1)
+            
+        return pid_img.convert("RGB")
+    except Exception as e:
+        st.error(f"Error creating P&ID image: {e}")
+        try:
+            return Image.open(PID_FILE).convert("RGB")
+        except:
+            return Image.new("RGB", (1200, 800), (255, 255, 255))
 
+# Load valve data
+valves = load_valves()
 pipes = load_pipes()
 
-# ----------------------------------------------------------------------
-# 4. OPTIONAL SNAP TO VALVES
-# ----------------------------------------------------------------------
-snap_enabled = st.checkbox("Snap pipe ends to nearest valve", value=True)
-
-def snap_to_valve(p, max_dist=80):
-    x, y = p
-    best = p
-    dmin = float('inf')
-    for tag, v in valves.items():
-        d = math.hypot(v["x"] - x, v["y"] - y)
-        if d < dmin and d <= max_dist:
-            dmin = d
-            best = (v["x"], v["y"])
-    return best
-
-if snap_enabled:
-    snapped = []
-    for p in pipes:
-        p1 = snap_to_valve((p["x1"], p["y1"]))
-        p2 = snap_to_valve((p["x2"], p["y2"]))
-        snapped.append({"x1": p1[0], "y1": p1[1], "x2": p2[0], "y2": p2[1]})
-    pipes = snapped
-
-# ----------------------------------------------------------------------
-# 5. SESSION STATE (valves only)
-# ----------------------------------------------------------------------
+# Initialize session state
 if "valve_states" not in st.session_state:
-    st.session_state.valve_states = {
-        tag: bool(data.get("state", False)) for tag, data in valves.items()
-    }
+    st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
-# ----------------------------------------------------------------------
-# 6. NEAREST VALVE HELPER
-# ----------------------------------------------------------------------
-def nearest_valve(point, max_dist=60):
-    x0, y0 = point
-    best = None
-    dmin = float('inf')
-    for tag, data in valves.items():
-        d = math.hypot(data["x"] - x0, data["y"] - y0)
-        if d < dmin and d <= max_dist:
-            dmin = d
-            best = tag
-    return best
+if "selected_pipe" not in st.session_state:
+    st.session_state.selected_pipe = 0 if pipes else None
 
-# ----------------------------------------------------------------------
-# 7. RENDER P&ID WITH FLOW
-# ----------------------------------------------------------------------
-def render():
-    canvas = base.copy()
-    draw = ImageDraw.Draw(canvas)
-    font = ImageFont.load_default()
+if "pipes" not in st.session_state:
+    st.session_state.pipes = pipes
 
-    # ---- PIPES + FLOW ----
-    for pipe in pipes:
-        p1 = (pipe["x1"], pipe["y1"])
-        p2 = (pipe["x2"], pipe["y2"])
+# Main app
+st.title("P&ID Interactive Simulation")
 
-        up   = nearest_valve(p1)
-        down = nearest_valve(p2)
-        flow = up and down and st.session_state.valve_states.get(up, False) and st.session_state.valve_states.get(down, False)
+# EMERGENCY RESET BUTTON
+if st.session_state.pipes:
+    st.error("🚨 If pipes are not visible, click the button below to RESET ALL PIPES to visible positions!")
+    if st.button("🔄 RESET ALL PIPES TO VISIBLE POSITIONS", type="primary", use_container_width=True):
+        st.session_state.pipes = reset_all_pipes_to_visible()
+        save_pipes(st.session_state.pipes)
+        st.success("✅ All pipes reset to visible positions!")
+        st.rerun()
 
-        color = (0, 255, 0, 220) if flow else (255, 0, 0, 180)
-        draw.line([p1, p2], fill=color, width=8)
+if not valves:
+    st.error("No valves found in valves.json. Please check your configuration.")
+    st.stop()
 
-        if flow:
-            dx, dy = p2[0] - p1[0], p2[1] - p1[1]
-            for i in range(3):
-                t = (time.time() * 0.6 + i * 0.33) % 1
-                ax = p1[0] + dx * t
-                ay = p1[1] + dy * t
-                ang = math.atan2(dy, dx)
-                a_len = 14
-                pts = [
-                    (ax, ay),
-                    (ax - a_len * math.cos(ang - 0.5), ay - a_len * math.sin(ang - 0.5)),
-                    (ax - a_len * math.cos(ang + 0.5), ay - a_len * math.sin(ang + 0.5))
-                ]
-                draw.polygon(pts, fill=(0, 200, 0))
+# Show pipe position status
+if st.session_state.pipes and st.session_state.selected_pipe is not None:
+    current_pipe = st.session_state.pipes[st.session_state.selected_pipe]
+    img_width, img_height = get_image_dimensions()
+    
+    # Check if pipe coordinates are reasonable
+    is_reasonable = (
+        -1000 <= current_pipe["x1"] <= img_width + 1000 and
+        -1000 <= current_pipe["x2"] <= img_width + 1000 and
+        -1000 <= current_pipe["y1"] <= img_height + 1000 and
+        -1000 <= current_pipe["y2"] <= img_height + 1000
+    )
+    
+    if not is_reasonable:
+        st.error(f"🚨 Pipe {st.session_state.selected_pipe + 1} coordinates are EXTREMELY OFF-SCREEN! Use RESET button above.")
 
-    # ---- VALVES ----
-    for tag, data in valves.items():
-        x, y = data["x"], data["y"]
-        col = (0, 255, 0) if st.session_state.valve_states.get(tag, False) else (255, 0, 0)
-        draw.ellipse([x-10, y-10, x+10, y+10], fill=col, outline="white", width=3)
-        draw.text((x+15, y-15), tag, fill="white", font=font)
-
-    return canvas.convert("RGB")
-
-# ----------------------------------------------------------------------
-# 8. UI
-# ----------------------------------------------------------------------
-st.title("P&ID Flow Simulation")
-
-# ---- Valve controls (sidebar) ----
+# Create sidebar for valve controls
 with st.sidebar:
-    st.header("Valve Controls")
-    cols = st.columns(3)
-    for i, (tag, _) in enumerate(valves.items()):
-        with cols[i % 3]:
-            state = st.session_state.valve_states[tag]
-            icon = "OPEN" if state else "CLOSED"
-            if st.button(f"{icon} {tag}", key=f"v_{tag}", use_container_width=True):
-                st.session_state.valve_states[tag] = not state
+    st.header("🎯 Valve Controls")
+    st.markdown("---")
+    
+    # Valve toggle buttons in sidebar
+    for tag, data in valves.items():
+        current_state = st.session_state.valve_states[tag]
+        
+        button_label = f"🔴 {tag} - OPEN" if current_state else f"🟢 {tag} - CLOSED"
+        
+        if st.button(button_label, key=f"btn_{tag}", use_container_width=True):
+            st.session_state.valve_states[tag] = not current_state
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Pipe selection
+    if st.session_state.pipes:
+        st.header("📋 Pipe Selection")
+        for i in range(len(st.session_state.pipes)):
+            is_selected = st.session_state.selected_pipe == i
+            pipe = st.session_state.pipes[i]
+            img_width, img_height = get_image_dimensions()
+            
+            # Check if pipe is reasonable
+            is_reasonable = (
+                -1000 <= pipe["x1"] <= img_width + 1000 and
+                -1000 <= pipe["x2"] <= img_width + 1000 and
+                -1000 <= pipe["y1"] <= img_height + 1000 and
+                -1000 <= pipe["y2"] <= img_height + 1000
+            )
+            
+            status_icon = "🟣" if is_selected else "🔵"
+            if not is_reasonable:
+                status_icon = "🟡"
+            
+            label = f"{status_icon} Pipe {i+1}" 
+            
+            if st.button(label, key=f"pipe_{i}", use_container_width=True):
+                st.session_state.selected_pipe = i
                 st.rerun()
 
-# ---- Main image ----
-st.image(render(), use_container_width=True,
-         caption="Green = Flow (both valves OPEN) | Red = Blocked")
+# Main content area - P&ID display
+col1, col2 = st.columns([3, 1])
+with col1:
+    # Create and display the P&ID with valve indicators AND pipes
+    composite_img = create_pid_with_valves_and_pipes()
+    st.image(composite_img, use_container_width=True, caption="🟣 Purple = Selected | 🔵 Blue = Normal | 🟡 Yellow = Off-screen (in sidebar)")
 
-# ---- Debug (collapsed) ----
-with st.expander("Debug", expanded=False):
-    st.write("P&ID size:", base.size)
-    st.write("Pipes loaded:", len(pipes))
-    st.write("Snap enabled:", snap_enabled)
-    st.write("Valve states:", st.session_state.valve_states)
-    if pipes:
-        st.json(pipes[:3])
+with col2:
+    # Right sidebar for detailed status
+    st.header("🔍 Details")
+    st.markdown("---")
+    
+    # Selected pipe info
+    if st.session_state.selected_pipe is not None and st.session_state.pipes:
+        pipe = st.session_state.pipes[st.session_state.selected_pipe]
+        img_width, img_height = get_image_dimensions()
+        
+        st.subheader(f"🟣 Pipe {st.session_state.selected_pipe + 1}")
+        st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
+        st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
+        
+        # Check if coordinates are reasonable
+        is_reasonable = (
+            -1000 <= pipe["x1"] <= img_width + 1000 and
+            -1000 <= pipe["x2"] <= img_width + 1000 and
+            -1000 <= pipe["y1"] <= img_height + 1000 and
+            -1000 <= pipe["y2"] <= img_height + 1000
+        )
+        
+        if not is_reasonable:
+            st.error("❌ Coordinates are EXTREMELY off-screen!")
+            st.info("Use the RESET button at the top to fix this pipe.")
+        else:
+            # Calculate current length and orientation
+            length = ((pipe["x2"] - pipe["x1"])**2 + (pipe["y2"] - pipe["y1"])**2)**0.5
+            is_horizontal = abs(pipe["y2"] - pipe["y1"]) < abs(pipe["x2"] - pipe["x1"])
+            orientation = "Horizontal" if is_horizontal else "Vertical"
+            st.write(f"**Length:** {int(length)} pixels")
+            st.write(f"**Orientation:** {orientation}")
+            
+            # QUICK RESET THIS PIPE
+            st.markdown("---")
+            st.subheader("🛠️ Quick Fix")
+            if st.button("🔄 RESET THIS PIPE", use_container_width=True, type="primary"):
+                img_width, img_height = get_image_dimensions()
+                
+                # Move to center with reasonable length
+                center_x = img_width // 2
+                center_y = img_height // 2
+                length = 100
+                
+                pipe["x1"] = center_x - length // 2
+                pipe["y1"] = center_y
+                pipe["x2"] = center_x + length // 2
+                pipe["y2"] = center_y
+                
+                save_pipes(st.session_state.pipes)
+                st.success("✅ Pipe reset to center!")
+                st.rerun()
+            
+            # Pipe movement controls
+            st.markdown("---")
+            st.subheader("📍 Move Pipe")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if st.button("↑", use_container_width=True):
+                    pipe["y1"] -= 10
+                    pipe["y2"] -= 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            with col2:
+                if st.button("↓", use_container_width=True):
+                    pipe["y1"] += 10
+                    pipe["y2"] += 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            with col3:
+                if st.button("←", use_container_width=True):
+                    pipe["x1"] -= 10
+                    pipe["x2"] -= 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            with col4:
+                if st.button("→", use_container_width=True):
+                    pipe["x1"] += 10
+                    pipe["x2"] += 10
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
+            
+            # Manual coordinate input
+            st.markdown("---")
+            st.subheader("🎯 Set Coordinates")
+            new_x1 = st.number_input("X1", value=pipe["x1"], key="set_x1")
+            new_y1 = st.number_input("Y1", value=pipe["y1"], key="set_y1")
+            new_x2 = st.number_input("X2", value=pipe["x2"], key="set_x2") 
+            new_y2 = st.number_input("Y2", value=pipe["y2"], key="set_y2")
+            
+            if st.button("💫 APPLY COORDINATES", use_container_width=True):
+                pipe["x1"] = new_x1
+                pipe["y1"] = new_y1
+                pipe["x2"] = new_x2
+                pipe["y2"] = new_y2
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+
+# Debug information
+with st.expander("🔧 Debug Information"):
+    st.write("**Image Dimensions:**", get_image_dimensions())
+    if st.session_state.pipes:
+        st.write("**Pipe 5 Coordinates:**", st.session_state.pipes[4] if len(st.session_state.pipes) > 4 else "Not found")
+    st.write("**All Pipes:**")
+    st.json(st.session_state.pipes)
