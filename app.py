@@ -42,10 +42,30 @@ def is_pipe_visible(pipe, img_width=1200, img_height=800):
             0 <= pipe["y2"] <= img_height)
 
 def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states):
-    """Determine pipe color based on upstream valve state"""
+    """Determine pipe color based on upstream valve state AND dependencies"""
     pipe = pipe_coords
     x1, y1 = pipe["x1"], pipe["y1"]  # Start point (upstream)
     
+    # Define pipe dependencies (0-indexed: pipe 1 = index 0, pipe 2 = index 1, etc.)
+    pipe_dependencies = {
+        19: 10,  # Pipe 20 follows pipe 1 (index 19 follows index 0)
+        2: 1,    # Pipe 3 follows pipe 2 (index 2 follows index 1)
+        3: 1,    # Pipe 4 follows pipe 2 (index 3 follows index 1)
+        21: 1,   # Pipe 22 follows pipe 2 (index 21 follows index 1)
+        20: 1,   # Pipe 21 follows pipe 2 (index 20 follows index 1)
+        13: 10,  # Pipe 14 follows pipe 11 (index 13 follows index 10)
+        18: 10   # Pipe 19 follows pipe 11 (index 18 follows index 10)
+    }
+    
+    # Check if this pipe depends on another pipe
+    if pipe_index in pipe_dependencies:
+        leader_pipe_index = pipe_dependencies[pipe_index]
+        if leader_pipe_index < len(st.session_state.pipes):
+            # Get the color from the leader pipe
+            leader_color = get_pipe_color_based_on_valves(leader_pipe_index, st.session_state.pipes[leader_pipe_index], valves, valve_states)
+            return leader_color
+    
+    # If no dependency or leader pipe not found, check valves normally
     # Find valves near the upstream point (x1, y1)
     valve_proximity_threshold = 20  # pixels
     
@@ -80,15 +100,14 @@ def create_pid_with_valves_and_pipes():
                 )
                 
                 if is_reasonable:
-                    # Get base color based on upstream valve state
-                    base_color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
+                    # Get pipe color based on upstream valve state AND dependencies
+                    color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
                     
                     # If this pipe is selected, make it purple regardless of valve state
                     if i == st.session_state.selected_pipe:
                         color = (148, 0, 211)  # Purple for selected pipe
                         width = 8
                     else:
-                        color = base_color
                         width = 6
                         
                     draw.line([(pipe["x1"], pipe["y1"]), (pipe["x2"], pipe["y2"])], fill=color, width=width)
@@ -218,6 +237,16 @@ with col2:
         st.write(f"**Open Valves:** {open_valves}")
         st.write(f"**Closed Valves:** {closed_valves}")
         
+        # Show pipe dependencies
+        st.markdown("---")
+        st.subheader("🔗 Pipe Dependencies")
+        st.markdown("""
+        - **Pipe 20** follows Pipe 1
+        - **Pipes 3, 4, 22, 21** follow Pipe 2  
+        - **Pipes 19, 10** follow Pipe 11
+        - **Pipe 14** follows Pipe 11
+        """)
+        
         # Show selected pipe info
         if st.session_state.selected_pipe is not None:
             st.markdown("---")
@@ -237,6 +266,7 @@ with col2:
         - **Open a valve** → Connected pipes turn **GREEN**
         - **Close a valve** → Connected pipes turn **BLUE**
         - **Click a pipe** → Highlights it in **PURPLE**
+        - Some pipes follow the color of other pipes (see dependencies)
         - Valve connects to pipe if it's near the pipe's **start point (x1)**
         """)
 
