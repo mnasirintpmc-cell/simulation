@@ -44,7 +44,12 @@ def is_pipe_visible(pipe, img_width=1200, img_height=800):
 def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states):
     """Determine pipe color based on upstream valve state AND dependencies"""
     pipe = pipe_coords
-    x1, y1 = pipe["x1"], pipe["y1"]  # Start point (upstream)
+    
+    # V-101 MASTER CONTROL - SIMPLE VERSION
+    # If V-101 is closed, pipes 3,4,22,21 turn blue
+    if "V-101" in valve_states and not valve_states["V-101"]:
+        if pipe_index + 1 in [3, 4, 22, 21]:  # Using 1-indexed pipe numbers for clarity
+            return (0, 0, 255)  # Blue
     
     # Define pipe dependencies (0-indexed: pipe 1 = index 0, pipe 2 = index 1, etc.)
     pipe_dependencies = {
@@ -57,27 +62,16 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
         18: 10   # Pipe 19 follows pipe 11 (index 18 follows index 10)
     }
     
-    # DEBUG: Print current state
-    print(f"Pipe {pipe_index+1}: V-101 state = {valve_states.get('V-101', 'NOT FOUND')}")
-    
-    # V-101 MASTER CONTROL: If V-101 is closed, pipes 3,4,22,21 turn blue
-    v101_dependent_pipes = [2, 3, 21, 20]  # Pipes 3,4,22,21 (0-indexed)
-    if "V-101" in valve_states and not valve_states["V-101"]:
-        if pipe_index in v101_dependent_pipes:
-            print(f"  -> V-101 CLOSED: Pipe {pipe_index+1} forced to BLUE")
-            return (0, 0, 255)  # Force blue color
-    
     # Check if this pipe depends on another pipe
     if pipe_index in pipe_dependencies:
         leader_pipe_index = pipe_dependencies[pipe_index]
         if leader_pipe_index < len(st.session_state.pipes):
-            print(f"  -> Pipe {pipe_index+1} follows Pipe {leader_pipe_index+1}")
             # Get the color from the leader pipe
             leader_color = get_pipe_color_based_on_valves(leader_pipe_index, st.session_state.pipes[leader_pipe_index], valves, valve_states)
             return leader_color
     
-    # If no dependency or leader pipe not found, check valves normally
-    # Find valves near the upstream point (x1, y1)
+    # If no dependency, check valves normally
+    x1, y1 = pipe["x1"], pipe["y1"]  # Start point (upstream)
     valve_proximity_threshold = 20  # pixels
     
     for tag, valve_data in valves.items():
@@ -87,14 +81,9 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
         distance = ((valve_x - x1)**2 + (valve_y - y1)**2)**0.5
         
         # If valve is close to pipe start point and is open, make pipe green
-        if distance <= valve_proximity_threshold:
-            print(f"  -> Pipe {pipe_index+1} near {tag} (distance: {distance:.1f}px), valve state: {valve_states[tag]}")
-            if valve_states[tag]:
-                return (0, 255, 0)  # Green for active flow
-            else:
-                return (0, 0, 255)  # Blue for closed valve
+        if distance <= valve_proximity_threshold and valve_states[tag]:
+            return (0, 255, 0)  # Green for active flow
     
-    print(f"  -> Pipe {pipe_index+1} no valve connection, default BLUE")
     return (0, 0, 255)  # Blue for no flow
 
 def create_pid_with_valves_and_pipes():
