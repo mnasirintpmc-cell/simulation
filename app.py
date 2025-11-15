@@ -150,10 +150,13 @@ if "valve_states" not in st.session_state:
     st.session_state.valve_states = {tag: data["state"] for tag, data in valves.items()}
 
 if "selected_pipe" not in st.session_state:
-    st.session_state.selected_pipe = None  # No pipe selected by default
+    st.session_state.selected_pipe = 0 if pipes else None  # Select first pipe by default for controls
 
 if "pipes" not in st.session_state:
     st.session_state.pipes = pipes
+
+if "show_pipe_controls" not in st.session_state:
+    st.session_state.show_pipe_controls = False
 
 # Main app
 st.title("P&ID Interactive Simulation")
@@ -190,6 +193,12 @@ with st.sidebar:
     st.header("📋 Valve-Pipe Connections")
     st.markdown("Pipes turn **green** when upstream valves are **OPEN**")
     st.markdown("Pipes stay **blue** when upstream valves are **CLOSED**")
+    
+    # Toggle for pipe controls
+    st.markdown("---")
+    if st.button("🔧 SHOW/HIDE PIPE CONTROLS", use_container_width=True):
+        st.session_state.show_pipe_controls = not st.session_state.show_pipe_controls
+        st.rerun()
 
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
@@ -230,6 +239,128 @@ with col2:
         - **Close a valve** → Connected pipes turn **BLUE**
         - Valve connects to pipe if it's near the pipe's **start point (x1)**
         """)
+
+    # PIPE CONTROLS SECTION (Conditional)
+    if st.session_state.show_pipe_controls and st.session_state.pipes:
+        st.markdown("---")
+        st.header("🛠️ Pipe Controls")
+        
+        # Pipe selection
+        st.subheader("📋 Pipe Selection")
+        for i in range(len(st.session_state.pipes)):
+            is_selected = st.session_state.selected_pipe == i
+            pipe = st.session_state.pipes[i]
+            img_width, img_height = get_image_dimensions()
+            
+            # Check if pipe is reasonable
+            is_reasonable = (
+                -1000 <= pipe["x1"] <= img_width + 1000 and
+                -1000 <= pipe["x2"] <= img_width + 1000 and
+                -1000 <= pipe["y1"] <= img_height + 1000 and
+                -1000 <= pipe["y2"] <= img_height + 1000
+            )
+            
+            status_icon = "🟣" if is_selected else "🔵"
+            if not is_reasonable:
+                status_icon = "🟡"
+            
+            label = f"{status_icon} Pipe {i+1}" 
+            
+            if st.button(label, key=f"pipe_{i}", use_container_width=True):
+                st.session_state.selected_pipe = i
+                st.rerun()
+        
+        # Selected pipe controls
+        if st.session_state.selected_pipe is not None:
+            pipe = st.session_state.pipes[st.session_state.selected_pipe]
+            img_width, img_height = get_image_dimensions()
+            
+            st.markdown("---")
+            st.subheader(f"🟣 Pipe {st.session_state.selected_pipe + 1} Controls")
+            st.write(f"Start: ({pipe['x1']}, {pipe['y1']})")
+            st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
+            
+            # Check if coordinates are reasonable
+            is_reasonable = (
+                -1000 <= pipe["x1"] <= img_width + 1000 and
+                -1000 <= pipe["x2"] <= img_width + 1000 and
+                -1000 <= pipe["y1"] <= img_height + 1000 and
+                -1000 <= pipe["y2"] <= img_height + 1000
+            )
+            
+            if not is_reasonable:
+                st.error("❌ Coordinates are EXTREMELY off-screen!")
+                st.info("Use the RESET button at the top to fix this pipe.")
+            else:
+                # Calculate current length and orientation
+                length = ((pipe["x2"] - pipe["x1"])**2 + (pipe["y2"] - pipe["y1"])**2)**0.5
+                is_horizontal = abs(pipe["y2"] - pipe["y1"]) < abs(pipe["x2"] - pipe["x1"])
+                orientation = "Horizontal" if is_horizontal else "Vertical"
+                st.write(f"**Length:** {int(length)} pixels")
+                st.write(f"**Orientation:** {orientation}")
+                
+                # QUICK RESET THIS PIPE
+                if st.button("🔄 RESET THIS PIPE", use_container_width=True, type="primary"):
+                    img_width, img_height = get_image_dimensions()
+                    
+                    # Move to center with reasonable length
+                    center_x = img_width // 2
+                    center_y = img_height // 2
+                    length = 100
+                    
+                    pipe["x1"] = center_x - length // 2
+                    pipe["y1"] = center_y
+                    pipe["x2"] = center_x + length // 2
+                    pipe["y2"] = center_y
+                    
+                    save_pipes(st.session_state.pipes)
+                    st.success("✅ Pipe reset to center!")
+                    st.rerun()
+                
+                # Pipe movement controls
+                st.markdown("---")
+                st.subheader("📍 Move Pipe")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    if st.button("↑", use_container_width=True):
+                        pipe["y1"] -= 10
+                        pipe["y2"] -= 10
+                        save_pipes(st.session_state.pipes)
+                        st.rerun()
+                with col2:
+                    if st.button("↓", use_container_width=True):
+                        pipe["y1"] += 10
+                        pipe["y2"] += 10
+                        save_pipes(st.session_state.pipes)
+                        st.rerun()
+                with col3:
+                    if st.button("←", use_container_width=True):
+                        pipe["x1"] -= 10
+                        pipe["x2"] -= 10
+                        save_pipes(st.session_state.pipes)
+                        st.rerun()
+                with col4:
+                    if st.button("→", use_container_width=True):
+                        pipe["x1"] += 10
+                        pipe["x2"] += 10
+                        save_pipes(st.session_state.pipes)
+                        st.rerun()
+                
+                # Manual coordinate input
+                st.markdown("---")
+                st.subheader("🎯 Set Coordinates")
+                new_x1 = st.number_input("X1", value=pipe["x1"], key="set_x1")
+                new_y1 = st.number_input("Y1", value=pipe["y1"], key="set_y1")
+                new_x2 = st.number_input("X2", value=pipe["x2"], key="set_x2") 
+                new_y2 = st.number_input("Y2", value=pipe["y2"], key="set_y2")
+                
+                if st.button("💫 APPLY COORDINATES", use_container_width=True):
+                    pipe["x1"] = new_x1
+                    pipe["y1"] = new_y1
+                    pipe["x2"] = new_x2
+                    pipe["y2"] = new_y2
+                    save_pipes(st.session_state.pipes)
+                    st.rerun()
 
 # Debug information
 with st.expander("🔧 Debug Information"):
