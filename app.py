@@ -19,57 +19,8 @@ def load_valves():
 def load_pipes():
     if os.path.exists(PIPES_DATA_FILE):
         with open(PIPES_DATA_FILE, "r") as f:
-            pipes_data = json.load(f)
-            # Check if pipes need to be scaled (if coordinates are very small)
-            if pipes_data and pipes_data[0]["x1"] < 100:  # If first pipe has small coordinates
-                return scale_pipe_coordinates(pipes_data)
-            return pipes_data
+            return json.load(f)
     return []
-
-def scale_pipe_coordinates(pipes_data, scale_factor=10):
-    """Scale up pipe coordinates that are too small to be visible"""
-    st.warning("🔍 Scaling pipe coordinates for better visibility...")
-    scaled_pipes = []
-    for pipe in pipes_data:
-        scaled_pipe = {
-            "x1": pipe["x1"] * scale_factor,
-            "y1": pipe["y1"] * scale_factor,
-            "x2": pipe["x2"] * scale_factor,
-            "y2": pipe["y2"] * scale_factor
-        }
-        scaled_pipes.append(scaled_pipe)
-    
-    # Save the scaled coordinates
-    save_pipes(scaled_pipes)
-    return scaled_pipes
-
-def normalize_pipe_coordinates(pipes_data):
-    """Normalize pipe coordinates to spread them across the image"""
-    st.warning("🔄 Normalizing pipe coordinates...")
-    
-    # Find min and max coordinates
-    all_x = [pipe["x1"] for pipe in pipes_data] + [pipe["x2"] for pipe in pipes_data]
-    all_y = [pipe["y1"] for pipe in pipes_data] + [pipe["y2"] for pipe in pipes_data]
-    
-    min_x, max_x = min(all_x), max(all_x)
-    min_y, max_y = min(all_y), max(all_y)
-    
-    img_width, img_height = get_image_dimensions()
-    
-    normalized_pipes = []
-    for pipe in pipes_data:
-        # Normalize coordinates to image dimensions
-        norm_pipe = {
-            "x1": int((pipe["x1"] - min_x) / (max_x - min_x) * img_width * 0.8 + img_width * 0.1),
-            "y1": int((pipe["y1"] - min_y) / (max_y - min_y) * img_height * 0.8 + img_height * 0.1),
-            "x2": int((pipe["x2"] - min_x) / (max_x - min_x) * img_width * 0.8 + img_width * 0.1),
-            "y2": int((pipe["y2"] - min_y) / (max_y - min_y) * img_height * 0.8 + img_height * 0.1)
-        }
-        normalized_pipes.append(norm_pipe)
-    
-    # Save the normalized coordinates
-    save_pipes(normalized_pipes)
-    return normalized_pipes
 
 def save_pipes(pipes_data):
     with open(PIPES_DATA_FILE, "w") as f:
@@ -82,6 +33,44 @@ def get_image_dimensions():
             return img.size
     except:
         return (1200, 800)  # Default fallback
+
+def is_pipe_visible(pipe, img_width=1200, img_height=800):
+    """Check if pipe coordinates are within image boundaries"""
+    return (0 <= pipe["x1"] <= img_width and 
+            0 <= pipe["x2"] <= img_width and
+            0 <= pipe["y1"] <= img_height and 
+            0 <= pipe["y2"] <= img_height)
+
+def reset_all_pipes_to_visible():
+    """Reset ALL pipes to visible positions"""
+    img_width, img_height = get_image_dimensions()
+    new_pipes = []
+    
+    # Create a grid of positions for all pipes
+    num_pipes = len(st.session_state.pipes)
+    cols = 4
+    rows = (num_pipes + cols - 1) // cols
+    
+    pipe_width = 100
+    spacing_x = img_width // (cols + 1)
+    spacing_y = img_height // (rows + 1)
+    
+    for i in range(num_pipes):
+        row = i // cols
+        col = i % cols
+        
+        center_x = spacing_x * (col + 1)
+        center_y = spacing_y * (row + 1)
+        
+        new_pipe = {
+            "x1": center_x - pipe_width // 2,
+            "y1": center_y,
+            "x2": center_x + pipe_width // 2,
+            "y2": center_y
+        }
+        new_pipes.append(new_pipe)
+    
+    return new_pipes
 
 def create_pid_with_valves_and_pipes():
     """Create P&ID image with valve indicators AND pipes"""
@@ -143,50 +132,128 @@ if "pipes" not in st.session_state:
 # Main app
 st.title("P&ID Interactive Simulation")
 
-# Pipe coordinate tools
-st.warning("🔍 Your pipes have very small coordinates. Use the tools below to make them visible:")
-
-col_tools1, col_tools2, col_tools3 = st.columns(3)
-with col_tools1:
-    if st.button("📏 SCALE COORDINATES (10x)", use_container_width=True):
-        st.session_state.pipes = scale_pipe_coordinates(st.session_state.pipes, 10)
-        st.success("✅ Coordinates scaled 10x!")
-        st.rerun()
-with col_tools2:
-    if st.button("🔄 NORMALIZE COORDINATES", use_container_width=True):
-        st.session_state.pipes = normalize_pipe_coordinates(st.session_state.pipes)
-        st.success("✅ Coordinates normalized!")
-        st.rerun()
-with col_tools3:
-    if st.button("🗑️ RESET TO ORIGINAL", use_container_width=True, type="secondary"):
-        original_pipes = [
-            {"x1": 3, "y1": 254, "x2": 16, "y2": 254},
-            {"x1": 3, "y1": 655, "x2": 11, "y2": 655},
-            {"x1": 0, "y1": 768, "x2": 14, "y2": 768},
-            {"x1": 11, "y1": 791, "x2": 597, "y2": 789},
-            {"x1": 722, "y1": 789, "x2": 994, "y2": 789},
-            {"x1": 773, "y1": 655, "x2": 784, "y2": 655},
-            {"x1": 410, "y1": 485, "x2": 423, "y2": 485},
-            {"x1": 994, "y1": 637, "x2": 1001, "y2": 637},
-            {"x1": 776, "y1": 0, "x2": 778, "y2": 0},
-            {"x1": 502, "y1": 363, "x2": 510, "y2": 363},
-            {"x1": 505, "y1": 393, "x2": 773, "y2": 393},
-            {"x1": 413, "y1": 313, "x2": 420, "y2": 313},
-            {"x1": 241, "y1": 476, "x2": 249, "y2": 476},
-            {"x1": 241, "y1": 254, "x2": 249, "y2": 254},
-            {"x1": 994, "y1": 121, "x2": 998, "y2": 121},
-            {"x1": 502, "y1": 0, "x2": 510, "y2": 0},
-            {"x1": 241, "y1": 0, "x2": 249, "y2": 0},
-            {"x1": 994, "y1": 520, "x2": 998, "y2": 520},
-            {"x1": 995, "y1": 38, "x2": 1001, "y2": 38},
-            {"x1": 1001, "y1": 38, "x2": 1200, "y2": 38},
-            {"x1": 0, "y1": 154, "x2": 5, "y2": 154},
-            {"x1": 0, "y1": 0, "x2": 5, "y2": 0}
-        ]
-        st.session_state.pipes = original_pipes
-        save_pipes(original_pipes)
-        st.success("✅ Reset to original coordinates!")
+# Top controls - compact layout
+col_top1, col_top2, col_top3 = st.columns([2, 1, 1])
+with col_top1:
+    st.info("💾 **Pipe positions auto-save when moved**")
+with col_top2:
+    if st.button("💾 MANUAL SAVE", use_container_width=True, type="primary"):
+        save_pipes(st.session_state.pipes)
+        st.success("✅ Saved!")
+with col_top3:
+    if st.session_state.pipes and st.button("🔄 RESET ALL", use_container_width=True, type="secondary"):
+        st.session_state.pipes = reset_all_pipes_to_visible()
+        save_pipes(st.session_state.pipes)
+        st.success("✅ Reset!")
         st.rerun()
 
-# Rest of your compact controls code continues here...
-# [Include the compact controls code from previous response]
+if not valves:
+    st.error("No valves found in valves.json. Please check your configuration.")
+    st.stop()
+
+# Main content area
+col1, col2 = st.columns([3, 1])
+with col1:
+    composite_img = create_pid_with_valves_and_pipes()
+    st.image(composite_img, use_container_width=True, caption="🟣 Selected Pipe | 🔵 Normal Pipe")
+
+with col2:
+    # COMPACT CONTROLS - All in one column
+    st.header("🔧 Controls")
+    
+    if st.session_state.selected_pipe is not None and st.session_state.pipes:
+        pipe = st.session_state.pipes[st.session_state.selected_pipe]
+        
+        # Current pipe info - very compact
+        st.subheader(f"🟣 Pipe {st.session_state.selected_pipe + 1}")
+        st.caption(f"📍 ({pipe['x1']}, {pipe['y1']}) → ({pipe['x2']}, {pipe['y2']})")
+        
+        # Quick actions in compact grid
+        st.subheader("🎯 Quick Actions")
+        action_col1, action_col2, action_col3 = st.columns(3)
+        with action_col1:
+            if st.button("➖ H", help="Make Horizontal", use_container_width=True):
+                center_x, center_y = (pipe["x1"] + pipe["x2"]) // 2, (pipe["y1"] + pipe["y2"]) // 2
+                pipe.update({"x1": center_x-50, "y1": center_y, "x2": center_x+50, "y2": center_y})
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        with action_col2:
+            if st.button("➡️ V", help="Make Vertical", use_container_width=True):
+                center_x, center_y = (pipe["x1"] + pipe["x2"]) // 2, (pipe["y1"] + pipe["y2"]) // 2
+                pipe.update({"x1": center_x, "y1": center_y-50, "x2": center_x, "y2": center_y+50})
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        with action_col3:
+            if st.button("🔄 C", help="Center Pipe", use_container_width=True):
+                img_w, img_h = get_image_dimensions()
+                pipe.update({"x1": img_w//2-50, "y1": img_h//2, "x2": img_w//2+50, "y2": img_h//2})
+                save_pipes(st.session_state.pipes)
+                st.rerun()
+        
+        # Movement controls - compact
+        st.subheader("📍 Move Pipe")
+        move_col1, move_col2, move_col3, move_col4 = st.columns(4)
+        with move_col1:
+            if st.button("↑", use_container_width=True):
+                pipe["y1"] -= 10; pipe["y2"] -= 10
+                save_pipes(st.session_state.pipes); st.rerun()
+        with move_col2:
+            if st.button("↓", use_container_width=True):
+                pipe["y1"] += 10; pipe["y2"] += 10
+                save_pipes(st.session_state.pipes); st.rerun()
+        with move_col3:
+            if st.button("←", use_container_width=True):
+                pipe["x1"] -= 10; pipe["x2"] -= 10
+                save_pipes(st.session_state.pipes); st.rerun()
+        with move_col4:
+            if st.button("→", use_container_width=True):
+                pipe["x1"] += 10; pipe["x2"] += 10
+                save_pipes(st.session_state.pipes); st.rerun()
+        
+        # Manual coordinates - compact
+        st.subheader("🎯 Exact Coordinates")
+        coord_col1, coord_col2 = st.columns(2)
+        with coord_col1:
+            new_x1 = st.number_input("X1", value=pipe["x1"], key="x1")
+            new_y1 = st.number_input("Y1", value=pipe["y1"], key="y1")
+        with coord_col2:
+            new_x2 = st.number_input("X2", value=pipe["x2"], key="x2")
+            new_y2 = st.number_input("Y2", value=pipe["y2"], key="y2")
+        
+        if st.button("💫 APPLY COORDINATES", use_container_width=True, type="primary"):
+            pipe.update({"x1": new_x1, "y1": new_y1, "x2": new_x2, "y2": new_y2})
+            save_pipes(st.session_state.pipes)
+            st.rerun()
+
+    # Compact pipe selection
+    st.markdown("---")
+    st.subheader("📋 Select Pipe")
+    if st.session_state.pipes:
+        # Use compact grid for pipe selection
+        pipe_cols = st.columns(4)
+        for i, pipe in enumerate(st.session_state.pipes):
+            with pipe_cols[i % 4]:
+                is_selected = st.session_state.selected_pipe == i
+                icon = "🟣" if is_selected else "🔵"
+                if st.button(f"{icon}{i+1}", key=f"pipe_{i}", use_container_width=True):
+                    st.session_state.selected_pipe = i
+                    st.rerun()
+
+    # Compact valve controls
+    st.markdown("---")
+    st.subheader("🎯 Valves")
+    valve_cols = st.columns(3)
+    for i, (tag, data) in enumerate(valves.items()):
+        with valve_cols[i % 3]:
+            current_state = st.session_state.valve_states[tag]
+            icon = "🔴" if current_state else "🟢"
+            label = f"{icon} {tag}"
+            if st.button(label, key=f"valve_{tag}", use_container_width=True):
+                st.session_state.valve_states[tag] = not current_state
+                st.rerun()
+
+# Minimal debug info
+with st.expander("🔧 Debug", expanded=False):
+    st.write(f"Pipes: {len(st.session_state.pipes)} | Selected: {st.session_state.selected_pipe}")
+    if st.session_state.pipes and st.session_state.selected_pipe is not None:
+        st.json(st.session_state.pipes[st.session_state.selected_pipe])
