@@ -41,21 +41,6 @@ def is_pipe_visible(pipe, img_width=1200, img_height=800):
             0 <= pipe["y1"] <= img_height and 
             0 <= pipe["y2"] <= img_height)
 
-def check_valve_dependencies(valve_states):
-    """Check if any valve dependencies are violated"""
-    # Define valve dependencies: V-101 is upstream of V-301
-    valve_dependencies = {
-        "V-301": "V-101"  # V-301 depends on V-101 being open
-    }
-    
-    # Check all valve dependencies
-    for downstream_valve, upstream_valve in valve_dependencies.items():
-        if (downstream_valve in valve_states and valve_states[downstream_valve] and 
-            upstream_valve in valve_states and not valve_states[upstream_valve]):
-            return False  # Dependency violated
-    
-    return True  # All dependencies satisfied
-
 def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states):
     """Determine pipe color based on upstream valve state AND dependencies"""
     pipe = pipe_coords
@@ -72,12 +57,10 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
         18: 10   # Pipe 19 follows pipe 11 (index 18 follows index 10)
     }
     
-    # Check valve dependencies first - if V-101 is closed, V-301 and downstream pipes should be blue
-    if not check_valve_dependencies(valve_states):
-        # If V-101 is closed, check if this pipe is connected to V-301 or its downstream pipes
-        # Pipes that depend on V-301 should be blue when V-101 is closed
-        v301_dependent_pipes = [2, 3, 21, 20]  # Pipes 3,4,22,21 (0-indexed)
-        if pipe_index in v301_dependent_pipes:
+    # SIMPLE V-101 LOGIC: If V-101 is closed, pipes 3,4,22,21 turn blue
+    v101_dependent_pipes = [2, 3, 21, 20]  # Pipes 3,4,22,21 (0-indexed)
+    if "V-101" in valve_states and not valve_states["V-101"]:
+        if pipe_index in v101_dependent_pipes:
             return (0, 0, 255)  # Force blue color
     
     # Check if this pipe depends on another pipe
@@ -260,32 +243,20 @@ with col2:
         st.write(f"**Open Valves:** {open_valves}")
         st.write(f"**Closed Valves:** {closed_valves}")
         
-        # Show valve dependency status
-        if "V-101" in st.session_state.valve_states and "V-301" in st.session_state.valve_states:
+        # Show V-101 status and its effect
+        if "V-101" in st.session_state.valve_states:
             st.markdown("---")
-            st.subheader("🔗 Valve Dependencies")
+            st.subheader("🎛️ V-101 Control")
             
             v101_status = "OPEN" if st.session_state.valve_states["V-101"] else "CLOSED"
-            v301_status = "OPEN" if st.session_state.valve_states["V-301"] else "CLOSED"
-            
             v101_color = "🟢" if st.session_state.valve_states["V-101"] else "🔴"
-            v301_color = "🟢" if st.session_state.valve_states["V-301"] else "🔴"
             
-            st.write(f"{v101_color} **V-101**: {v101_status} (Upstream)")
-            st.write(f"{v301_color} **V-301**: {v301_status} (Downstream)")
+            st.write(f"{v101_color} **V-101**: {v101_status}")
             
-            dependency_violated = (st.session_state.valve_states["V-301"] and 
-                                 not st.session_state.valve_states["V-101"])
-            
-            if dependency_violated:
-                st.error("❌ VALVE DEPENDENCY VIOLATED: V-101 is CLOSED but V-301 is OPEN")
-                st.warning("Pipes 3,4,22,21 are forced to BLUE (no flow)")
-            elif not st.session_state.valve_states["V-101"]:
-                st.warning("⚠️ V-101 is CLOSED: No flow can reach V-301 and downstream pipes")
-            elif st.session_state.valve_states["V-101"] and not st.session_state.valve_states["V-301"]:
-                st.info("ℹ️ V-101 is OPEN but V-301 is CLOSED: Flow available but blocked at V-301")
-            elif st.session_state.valve_states["V-101"] and st.session_state.valve_states["V-301"]:
-                st.success("✅ Both V-101 and V-301 are OPEN: Flow is active")
+            if not st.session_state.valve_states["V-101"]:
+                st.warning("V-101 CLOSED: Pipes 3,4,22,21 are forced to BLUE")
+            else:
+                st.success("V-101 OPEN: Pipes 3,4,22,21 follow V-301")
         
         # Show pipe dependencies
         st.markdown("---")
@@ -295,8 +266,8 @@ with col2:
         - **Pipes 3, 4, 22, 21** follow Pipe 2  
         - **Pipes 19, 10** follow Pipe 11
         - **Pipe 14** follows Pipe 11
-        - **Valve Dependency**: V-101 → V-301
         - **V-101 CLOSED** → Pipes 3,4,22,21 forced to BLUE
+        - **V-101 OPEN** → Pipes 3,4,22,21 follow V-301
         """)
         
         # Show selected pipe info
@@ -319,9 +290,9 @@ with col2:
         - **Close a valve** → Connected pipes turn **BLUE**
         - **Click a pipe** → Highlights it in **PURPLE**
         - Some pipes follow the color of other pipes (see dependencies)
-        - **Valve Dependencies**: 
-          - **V-101 CLOSED** → No flow to V-301 → Pipes 3,4,22,21 forced to BLUE
-          - **V-101 OPEN + V-301 OPEN** → Normal flow
+        - **V-101 Control**:
+          - **V-101 CLOSED** → Pipes 3,4,22,21 forced to BLUE
+          - **V-101 OPEN** → Pipes 3,4,22,21 follow V-301
         - Valve connects to pipe if it's near the pipe's **start point (x1)**
         """)
 
