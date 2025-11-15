@@ -185,34 +185,6 @@ with st.sidebar:
         if st.button(button_label, key=f"btn_{tag}", use_container_width=True):
             st.session_state.valve_states[tag] = not current_state
             st.rerun()
-    
-    st.markdown("---")
-    
-    # Pipe selection
-    if st.session_state.pipes:
-        st.header("📋 Pipe Selection")
-        for i in range(len(st.session_state.pipes)):
-            is_selected = st.session_state.selected_pipe == i
-            pipe = st.session_state.pipes[i]
-            img_width, img_height = get_image_dimensions()
-            
-            # Check if pipe is reasonable
-            is_reasonable = (
-                -1000 <= pipe["x1"] <= img_width + 1000 and
-                -1000 <= pipe["x2"] <= img_width + 1000 and
-                -1000 <= pipe["y1"] <= img_height + 1000 and
-                -1000 <= pipe["y2"] <= img_height + 1000
-            )
-            
-            status_icon = "🟣" if is_selected else "🔵"
-            if not is_reasonable:
-                status_icon = "🟡"
-            
-            label = f"{status_icon} Pipe {i+1}" 
-            
-            if st.button(label, key=f"pipe_{i}", use_container_width=True):
-                st.session_state.selected_pipe = i
-                st.rerun()
 
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
@@ -253,71 +225,6 @@ with col2:
             orientation = "Horizontal" if is_horizontal else "Vertical"
             st.write(f"**Length:** {int(length)} pixels")
             st.write(f"**Orientation:** {orientation}")
-            
-            # QUICK RESET THIS PIPE
-            st.markdown("---")
-            st.subheader("🛠️ Quick Fix")
-            if st.button("🔄 RESET THIS PIPE", use_container_width=True, type="primary"):
-                img_width, img_height = get_image_dimensions()
-                
-                # Move to center with reasonable length
-                center_x = img_width // 2
-                center_y = img_height // 2
-                length = 100
-                
-                pipe["x1"] = center_x - length // 2
-                pipe["y1"] = center_y
-                pipe["x2"] = center_x + length // 2
-                pipe["y2"] = center_y
-                
-                save_pipes(st.session_state.pipes)
-                st.success("✅ Pipe reset to center!")
-                st.rerun()
-            
-            # Pipe movement controls
-            st.markdown("---")
-            st.subheader("📍 Move Pipe")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                if st.button("↑", use_container_width=True):
-                    pipe["y1"] -= 10
-                    pipe["y2"] -= 10
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            with col2:
-                if st.button("↓", use_container_width=True):
-                    pipe["y1"] += 10
-                    pipe["y2"] += 10
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            with col3:
-                if st.button("←", use_container_width=True):
-                    pipe["x1"] -= 10
-                    pipe["x2"] -= 10
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            with col4:
-                if st.button("→", use_container_width=True):
-                    pipe["x1"] += 10
-                    pipe["x2"] += 10
-                    save_pipes(st.session_state.pipes)
-                    st.rerun()
-            
-            # Manual coordinate input
-            st.markdown("---")
-            st.subheader("🎯 Set Coordinates")
-            new_x1 = st.number_input("X1", value=pipe["x1"], key="set_x1")
-            new_y1 = st.number_input("Y1", value=pipe["y1"], key="set_y1")
-            new_x2 = st.number_input("X2", value=pipe["x2"], key="set_x2") 
-            new_y2 = st.number_input("Y2", value=pipe["y2"], key="set_y2")
-            
-            if st.button("💫 APPLY COORDINATES", use_container_width=True):
-                pipe["x1"] = new_x1
-                pipe["y1"] = new_y1
-                pipe["x2"] = new_x2
-                pipe["y2"] = new_y2
-                save_pipes(st.session_state.pipes)
-                st.rerun()
 
 # Debug information
 with st.expander("🔧 Debug Information"):
