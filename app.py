@@ -93,20 +93,37 @@ def get_pipe_color_based_on_groups(pipe_index, pipe_coords, valves, valve_states
     """Determine pipe color based on pipe groups and valve control"""
     pipe_number = pipe_index + 1
     
+    # DEBUG: Print valve states for V-301 and V-302
+    v301_state = valve_states.get("V-301", "NOT FOUND")
+    v302_state = valve_states.get("V-302", "NOT FOUND")
+    print(f"DEBUG: Pipe {pipe_number}, V-301: {v301_state}, V-302: {v302_state}")
+    
     # Find which groups this pipe belongs to
     pipe_groups_list = []
     for group_id, group_data in pipe_groups["pipe_groups"].items():
         if pipe_number in group_data["pipes"]:
             pipe_groups_list.append(group_id)
     
+    print(f"DEBUG: Pipe {pipe_number} belongs to groups: {pipe_groups_list}")
+    
     # If pipe belongs to any groups, check if any controlling valves are open
     if pipe_groups_list:
         for group_id in pipe_groups_list:
+            # Find valves that control this group
+            controlling_valves = []
             for valve_tag, controlled_groups in pipe_groups["valve_control"].items():
-                if group_id in controlled_groups and valve_tag in valve_states:
-                    if valve_states[valve_tag]:
-                        return (0, 255, 0)
+                if group_id in controlled_groups:
+                    controlling_valves.append(valve_tag)
+            
+            print(f"DEBUG: Group {group_id} controlled by valves: {controlling_valves}")
+            
+            # Check if any controlling valve is open
+            for valve_tag in controlling_valves:
+                if valve_tag in valve_states and valve_states[valve_tag]:
+                    print(f"DEBUG: Valve {valve_tag} is OPEN - Pipe {pipe_number} should be GREEN")
+                    return (0, 255, 0)
         
+        print(f"DEBUG: All controlling valves for pipe {pipe_number} are CLOSED - should be BLUE")
         return (0, 0, 255)
     
     # If pipe doesn't belong to any group, check physical proximity
@@ -255,22 +272,6 @@ with st.sidebar:
                 st.session_state.selected_pipe = i
                 st.rerun()
 
-# Pipe Group Editor
-if st.session_state.show_group_editor:
-    st.header("🏗️ Pipe Group Editor")
-    st.markdown("Group pipes based on mechanical construction and assign controlling valves")
-    
-    with st.expander("📝 Edit Pipe Groups", expanded=True):
-        st.json(st.session_state.pipe_groups)
-        
-        if st.button("💾 Save Pipe Groups"):
-            try:
-                with open(PIPE_GROUPS_FILE, "w") as f:
-                    json.dump(st.session_state.pipe_groups, f, indent=2)
-                st.success("Pipe groups saved!")
-            except Exception as e:
-                st.error(f"Error saving pipe groups: {e}")
-
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -311,10 +312,10 @@ with col2:
     # Show valve status summary
     st.markdown("---")
     st.subheader("🎯 Valve States")
-    open_valves = sum(1 for state in st.session_state.valve_states.values() if state)
-    closed_valves = len(valves) - open_valves
-    st.write(f"**Open Valves:** {open_valves}")
-    st.write(f"**Closed Valves:** {closed_valves}")
+    for tag, state in st.session_state.valve_states.items():
+        status = "OPEN" if state else "CLOSED"
+        color = "🟢" if state else "🔴"
+        st.write(f"{color} {tag}: {status}")
     
     # Show selected pipe info
     if st.session_state.selected_pipe is not None:
@@ -360,8 +361,9 @@ with col2:
     - **Group 4 (Right):** Pipes 10, 11, 19
     
     **Valve Control:**
-    - Open a valve → All pipes in controlled groups turn GREEN
-    - Close all valves for a group → All pipes in group turn BLUE
+    - **V-101** → Group 1 (Pipes 1, 2)
+    - **V-301, V-302** → Group 2 (Pipes 2, 3, 4, 14, 21, 22)
+    - **V-103** → Group 3 (Pipes 5, 6, 7, 8, 9, 15, 16, 17)
     """)
 
 # Debug information
@@ -381,6 +383,11 @@ with st.expander("🔧 Debug Information"):
         st.write(f"{status} **{group_data['name']}**")
         st.write(f"  Pipes: {group_data['pipes']}")
         st.write(f"  Controlling Valves: {group_valves}")
+        
+        # Show valve states for this group
+        for valve in group_valves:
+            valve_state = st.session_state.valve_states.get(valve, "NOT FOUND")
+            st.write(f"    - {valve}: {'OPEN' if valve_state else 'CLOSED'}")
     
     # Show pipe colors
     st.subheader("Pipe Colors")
