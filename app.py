@@ -67,7 +67,9 @@ def get_valve_to_leader_mapping():
     """Define which valves control which leader pipes"""
     return {
         "V-301": 2,   # V-301 controls Pipe 2 (leader)
-        "V-302": 13   # V-302 controls Pipe 13 (leader)
+        "V-302": 13,  # V-302 controls Pipe 13 (leader)
+        "V-103": 5,   # V-103 controls Pipe 5 (leader) - includes pipe 8
+        "V-104": 22   # V-104 controls Pipe 22 directly
     }
 
 def get_leading_pipe_color(leader_pipe_index, valves, valve_states):
@@ -105,7 +107,17 @@ def get_pipe_color_based_on_leader_system(pipe_index, valves, valve_states):
     """Determine pipe color based on leading pipe system"""
     pipe_number = pipe_index + 1
     
-    # Get pipe groups with leaders
+    # FIRST: Check if this pipe is directly controlled by a valve
+    valve_mapping = get_valve_to_leader_mapping()
+    for valve_tag, controlled_pipe in valve_mapping.items():
+        if pipe_number == controlled_pipe:
+            # This pipe is directly controlled by a valve
+            if valve_states.get(valve_tag, False):
+                return (0, 255, 0)  # Green if valve open
+            else:
+                return (0, 0, 255)  # Blue if valve closed
+    
+    # SECOND: Check leader-follower system
     pipe_groups = get_pipe_groups_with_leaders()
     
     # Check if this pipe is a leader in any group
@@ -122,7 +134,8 @@ def get_pipe_color_based_on_leader_system(pipe_index, valves, valve_states):
             leader_pipe_index = leader_pipe_number - 1  # Convert to 0-indexed
             
             if leader_pipe_index < len(st.session_state.pipes):
-                return get_leading_pipe_color(leader_pipe_index, valves, valve_states)
+                leader_color = get_leading_pipe_color(leader_pipe_index, valves, valve_states)
+                return leader_color
     
     # If pipe doesn't belong to any group, use proximity-based logic
     return get_pipe_color_based_on_proximity(pipe_index, valves, valve_states)
@@ -318,22 +331,25 @@ with col2:
     st.subheader("🔗 Valve Control Mapping")
     
     valve_mapping = get_valve_to_leader_mapping()
-    for valve_tag, controlled_leader in valve_mapping.items():
+    pipe_groups = get_pipe_groups_with_leaders()
+    
+    for valve_tag, controlled_pipe in valve_mapping.items():
         valve_state = st.session_state.valve_states.get(valve_tag, False)
         
         status_icon = "🟢" if valve_state else "🔵"
         status_text = "ACTIVE" if valve_state else "INACTIVE"
         
-        # Get the followers of this leader
-        followers = []
-        pipe_groups = get_pipe_groups_with_leaders()
+        # Find which pipes are controlled by this valve
+        controlled_pipes = [controlled_pipe]
+        
+        # If this controlled pipe is a leader, add its followers
         for group_name, group_data in pipe_groups.items():
-            if group_data["leader"] == controlled_leader:
-                followers = group_data["followers"]
+            if group_data["leader"] == controlled_pipe:
+                controlled_pipes.extend(group_data["followers"])
                 break
         
-        st.write(f"{status_icon} **{valve_tag}** → **Pipe {controlled_leader}**")
-        st.write(f"Controls: Pipes {[controlled_leader] + followers}")
+        st.write(f"{status_icon} **{valve_tag}** → **Pipe {controlled_pipe}**")
+        st.write(f"Controls: Pipes {controlled_pipes}")
         st.write(f"Status: {status_text}")
         st.write("---")
     
@@ -376,8 +392,24 @@ with col2:
             st.write(f"**Role:** 📋 FOLLOWER in {follower_in_group}")
             leader_pipe = pipe_groups[follower_in_group]["leader"]
             st.write(f"**Follows:** Pipe {leader_pipe}")
+            
+            # Check if the leader is controlled by a valve
+            valve_mapping = get_valve_to_leader_mapping()
+            for valve_tag, controlled_leader in valve_mapping.items():
+                if leader_pipe == controlled_leader:
+                    valve_state = st.session_state.valve_states.get(valve_tag, False)
+                    status = "OPEN" if valve_state else "CLOSED"
+                    st.write(f"**Indirectly controlled by:** {valve_tag} ({status})")
         else:
             st.write(f"**Role:** 🚀 Standalone Pipe")
+        
+        # Check if directly controlled by valve
+        valve_mapping = get_valve_to_leader_mapping()
+        for valve_tag, controlled_pipe in valve_mapping.items():
+            if pipe_number == controlled_pipe:
+                valve_state = st.session_state.valve_states.get(valve_tag, False)
+                status = "OPEN" if valve_state else "CLOSED"
+                st.write(f"**Directly controlled by:** {valve_tag} ({status})")
         
         # Check flow status
         color = get_pipe_color_based_on_leader_system(st.session_state.selected_pipe, valves, st.session_state.valve_states)
@@ -397,12 +429,14 @@ with col2:
     - **Pipe 11** → **Pipes 10, 19**
     - **Pipe 2** → **Pipes 3,4,14,21,22** (controlled by V-301)
     - **Pipe 13** → **Pipes 14,4,21,22** (controlled by V-302)
-    - **Pipe 5** → **Pipes 6,7,8,9,18**
+    - **Pipe 5** → **Pipes 6,7,8,9,18** (controlled by V-103)
     - **Pipe 17** → **Pipes 16,15,8**
     
-    **Valve Control:**
+    **Direct Valve Control:**
     - **V-301** → **Pipe 2** → Activates Pipes 3,4,14,21,22
     - **V-302** → **Pipe 13** → Activates Pipes 14,4,21,22
+    - **V-103** → **Pipe 5** → Activates Pipes 6,7,8,9,18
+    - **V-104** → **Pipe 22** (direct control)
     
     **Color Coding:**
     - 🟢 **GREEN** = Active Flow
@@ -445,6 +479,12 @@ with st.expander("🔧 Debug Information"):
                 break
             elif pipe_number in group_data["followers"]:
                 role = f"Follower in {group_name}"
+                break
+        
+        # Check direct valve control
+        for valve_tag, controlled_pipe in valve_mapping.items():
+            if pipe_number == controlled_pipe:
+                role = f"Directly controlled by {valve_tag}"
                 break
         
         st.write(f"Pipe {pipe_number}: {color_name} | {role}")
