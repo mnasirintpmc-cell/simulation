@@ -63,43 +63,26 @@ def get_pipe_groups_with_leaders():
         }
     }
 
-def get_valve_control_logic():
-    """Define which valves control which pipe groups"""
+def get_valve_to_leader_mapping():
+    """Define which valves control which leader pipes"""
     return {
-        # Pipe 2 group: controlled by V-301 only
-        "pipe_2_group": {
-            "valves": ["V-301"],  # V-301 controls Pipe 2 group
-            "logic": "DIRECT",  # Direct control
-            "pipes": [2, 3, 4, 14, 21, 22]  # All pipes in this group
-        },
-        # Pipe 13 group: controlled by V-302 only  
-        "pipe_13_group": {
-            "valves": ["V-302"],  # V-302 controls Pipe 13 group
-            "logic": "DIRECT",  # Direct control
-            "pipes": [13, 14, 4, 21, 22]  # All pipes in this group
-        }
+        "V-301": 2,   # V-301 controls Pipe 2 (leader)
+        "V-302": 13   # V-302 controls Pipe 13 (leader)
     }
 
 def get_leading_pipe_color(leader_pipe_index, valves, valve_states):
     """Get the color for the leading pipe based on valve control"""
     leader_pipe_number = leader_pipe_index + 1
     
-    # Check special valve control logic first
-    valve_control = get_valve_control_logic()
-    
-    for group_name, group_data in valve_control.items():
-        if leader_pipe_number in group_data["pipes"]:
-            # This pipe is controlled by special valve logic
-            controlling_valves = group_data["valves"]
-            logic_type = group_data["logic"]
-            
-            if logic_type == "DIRECT":
-                # Direct control: follow the specific valve
-                for valve_tag in controlling_valves:
-                    if valve_states.get(valve_tag, False):
-                        return (0, 255, 0)  # Green if valve is open
-                    else:
-                        return (0, 0, 255)  # Blue if valve is closed
+    # Check if this leader pipe is controlled by a specific valve
+    valve_mapping = get_valve_to_leader_mapping()
+    for valve_tag, controlled_leader in valve_mapping.items():
+        if leader_pipe_number == controlled_leader:
+            # This leader is controlled by a specific valve
+            if valve_states.get(valve_tag, False):
+                return (0, 255, 0)  # Green if controlling valve is open
+            else:
+                return (0, 0, 255)  # Blue if controlling valve is closed
     
     # Normal proximity-based logic for other pipes
     leader_pipe = st.session_state.pipes[leader_pipe_index]
@@ -330,24 +313,27 @@ with col2:
         st.write(f"📋 Followers: Pipes {followers}")
         st.write("---")
     
-    # Show special valve control logic
+    # Show valve control mapping
     st.markdown("---")
-    st.subheader("🔗 Valve Control Logic")
+    st.subheader("🔗 Valve Control Mapping")
     
-    valve_control = get_valve_control_logic()
-    for group_name, group_data in valve_control.items():
-        controlling_valves = group_data["valves"]
-        controlled_pipes = group_data["pipes"]
-        logic_type = group_data["logic"]
-        
-        # Check current state
-        valve_state = st.session_state.valve_states.get(controlling_valves[0], False)
+    valve_mapping = get_valve_to_leader_mapping()
+    for valve_tag, controlled_leader in valve_mapping.items():
+        valve_state = st.session_state.valve_states.get(valve_tag, False)
         
         status_icon = "🟢" if valve_state else "🔵"
         status_text = "ACTIVE" if valve_state else "INACTIVE"
         
-        st.write(f"{status_icon} **{controlling_valves[0]}** controls:")
-        st.write(f"Pipes {controlled_pipes}")
+        # Get the followers of this leader
+        followers = []
+        pipe_groups = get_pipe_groups_with_leaders()
+        for group_name, group_data in pipe_groups.items():
+            if group_data["leader"] == controlled_leader:
+                followers = group_data["followers"]
+                break
+        
+        st.write(f"{status_icon} **{valve_tag}** → **Pipe {controlled_leader}**")
+        st.write(f"Controls: Pipes {[controlled_leader] + followers}")
         st.write(f"Status: {status_text}")
         st.write("---")
     
@@ -377,22 +363,21 @@ with col2:
         if is_leader:
             st.write(f"**Role:** 👑 LEADER of {leader_of_group}")
             st.write(f"**Controls:** Pipes {pipe_groups[leader_of_group]['followers']}")
+            
+            # Check if this leader is controlled by a specific valve
+            valve_mapping = get_valve_to_leader_mapping()
+            for valve_tag, controlled_leader in valve_mapping.items():
+                if pipe_number == controlled_leader:
+                    valve_state = st.session_state.valve_states.get(valve_tag, False)
+                    status = "OPEN" if valve_state else "CLOSED"
+                    st.write(f"**Controlled by:** {valve_tag} ({status})")
+                    
         elif is_follower:
             st.write(f"**Role:** 📋 FOLLOWER in {follower_in_group}")
             leader_pipe = pipe_groups[follower_in_group]["leader"]
             st.write(f"**Follows:** Pipe {leader_pipe}")
         else:
             st.write(f"**Role:** 🚀 Standalone Pipe")
-        
-        # Check special valve control
-        valve_control = get_valve_control_logic()
-        controlled_by_valves = []
-        for group_name, group_data in valve_control.items():
-            if pipe_number in group_data["pipes"]:
-                controlled_by_valves.extend(group_data["valves"])
-        
-        if controlled_by_valves:
-            st.write(f"**Controlled by:** {', '.join(set(controlled_by_valves))}")
         
         # Check flow status
         color = get_pipe_color_based_on_leader_system(st.session_state.selected_pipe, valves, st.session_state.valve_states)
@@ -416,8 +401,8 @@ with col2:
     - **Pipe 17** → **Pipes 16,15,8**
     
     **Valve Control:**
-    - **V-301** directly controls Pipe 2 and its followers
-    - **V-302** directly controls Pipe 13 and its followers
+    - **V-301** → **Pipe 2** → Activates Pipes 3,4,14,21,22
+    - **V-302** → **Pipe 13** → Activates Pipes 14,4,21,22
     
     **Color Coding:**
     - 🟢 **GREEN** = Active Flow
@@ -441,7 +426,7 @@ with st.expander("🔧 Debug Information"):
     # Show pipe information with roles
     st.subheader("Pipe Roles & Colors")
     pipe_groups = get_pipe_groups_with_leaders()
-    valve_control = get_valve_control_logic()
+    valve_mapping = get_valve_to_leader_mapping()
     
     for i in range(len(st.session_state.pipes)):
         pipe_number = i + 1
@@ -453,19 +438,14 @@ with st.expander("🔧 Debug Information"):
         for group_name, group_data in pipe_groups.items():
             if pipe_number == group_data["leader"]:
                 role = f"Leader of {group_name}"
+                # Check if controlled by valve
+                for valve_tag, controlled_leader in valve_mapping.items():
+                    if pipe_number == controlled_leader:
+                        role += f" (controlled by {valve_tag})"
                 break
             elif pipe_number in group_data["followers"]:
                 role = f"Follower in {group_name}"
                 break
-        
-        # Check special valve control
-        special_control = []
-        for group_name, group_data in valve_control.items():
-            if pipe_number in group_data["pipes"]:
-                special_control.extend(group_data["valves"])
-        
-        if special_control:
-            role += f" | Controlled by: {', '.join(set(special_control))}"
         
         st.write(f"Pipe {pipe_number}: {color_name} | {role}")
     
