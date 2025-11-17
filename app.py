@@ -69,14 +69,18 @@ def find_controlling_valve_for_pipe(pipe_index, valves, valve_states):
     x1, y1 = pipe["x1"], pipe["y1"]
     valve_proximity_threshold = 20
     
+    closest_valve = None
+    min_distance = float('inf')
+    
     for tag, valve_data in valves.items():
         valve_x, valve_y = valve_data["x"], valve_data["y"]
         distance = ((valve_x - x1)**2 + (valve_y - y1)**2)**0.5
         
-        if distance <= valve_proximity_threshold:
-            return tag  # Return the valve tag that controls this pipe
+        if distance <= valve_proximity_threshold and distance < min_distance:
+            min_distance = distance
+            closest_valve = tag
     
-    return None  # No valve controls this pipe
+    return closest_valve
 
 def get_leader_pipe_status(leader_pipe_index, valves, valve_states):
     """Get the status (color) for a leader pipe based on its controlling valve"""
@@ -228,6 +232,46 @@ with st.sidebar:
                 st.session_state.selected_pipe = i
                 st.rerun()
 
+    # Pipe Position Adjustment Section
+    st.markdown("---")
+    st.header("🛠️ Pipe Position Adjustment")
+    st.markdown("Move pipe endpoints to adjust positioning")
+    
+    if st.session_state.selected_pipe is not None:
+        pipe = st.session_state.pipes[st.session_state.selected_pipe]
+        st.write(f"**Adjusting Pipe {st.session_state.selected_pipe + 1}**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Start Point**")
+            new_x1 = st.number_input("X1", value=pipe["x1"], key="x1_adjust")
+            new_y1 = st.number_input("Y1", value=pipe["y1"], key="y1_adjust")
+        with col2:
+            st.write("**End Point**")
+            new_x2 = st.number_input("X2", value=pipe["x2"], key="x2_adjust")
+            new_y2 = st.number_input("Y2", value=pipe["y2"], key="y2_adjust")
+        
+        if st.button("💾 Apply Position Changes", use_container_width=True):
+            st.session_state.pipes[st.session_state.selected_pipe] = {
+                "x1": new_x1, "y1": new_y1, "x2": new_x2, "y2": new_y2
+            }
+            save_pipes(st.session_state.pipes)
+            st.success("Pipe position updated!")
+            st.rerun()
+        
+        # Show current valve distances for the selected pipe
+        st.markdown("---")
+        st.subheader("📏 Distance to Valves")
+        pipe = st.session_state.pipes[st.session_state.selected_pipe]
+        x1, y1 = pipe["x1"], pipe["y1"]
+        
+        for tag, valve_data in valves.items():
+            valve_x, valve_y = valve_data["x"], valve_data["y"]
+            distance = ((valve_x - x1)**2 + (valve_y - y1)**2)**0.5
+            st.write(f"**{tag}**: {distance:.1f} pixels")
+    else:
+        st.info("Select a pipe first to adjust its position")
+
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -360,7 +404,7 @@ with col2:
     st.subheader("🔧 How It Works")
     st.markdown("""
     **Workflow:**
-    1. **Valves control nearest pipe leaders** based on proximity
+    1. **Valves control nearest pipe leaders** based on proximity (20 pixels)
     2. **Leader pipes control their followers** - when leader changes, followers change too
     3. **Proximity-based**: Valves automatically control the closest pipe start point
     
@@ -383,6 +427,11 @@ with col2:
 # Debug information
 with st.expander("🔧 Debug Information"):
     st.write("**Image Dimensions:**", get_image_dimensions())
+    
+    # Show valve positions
+    st.subheader("🎯 Valve Positions")
+    for tag, data in valves.items():
+        st.write(f"**{tag}**: ({data['x']}, {data['y']})")
     
     # Show current valve states
     st.subheader("Current Valve States")
