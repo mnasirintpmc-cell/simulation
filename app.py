@@ -1,4 +1,4 @@
-import streamlit as st
+mport streamlit as st
 import json
 from PIL import Image, ImageDraw
 import os
@@ -41,49 +41,56 @@ def is_pipe_visible(pipe, img_width=1200, img_height=800):
             0 <= pipe["y1"] <= img_height and 
             0 <= pipe["y2"] <= img_height)
 
-def get_pipe_groups():
-    """Define pipe groups based on your requirements"""
-    return {
-        "Group 1": [1],      # V-101 controls any group containing pipe 1
-        "Group 2": [11],     # V-102 controls any group containing pipe 11
-        "Group 3": [2, 3],   # Example additional group
-        "Group 4": [4, 5, 6], # Example additional group
-        "Group 5": [7, 8, 9, 10] # Example additional group
+def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states):
+    """Determine pipe color based on upstream valve state AND dependencies"""
+    pipe_number = pipe_index + 1  # Convert to 1-indexed for clarity
+    
+    # Define valve dependencies with their specific pipes
+    valve_dependencies = {
+        "V-301": [2, 3, 14, 22, 21],  # V-301 controls pipes 2,3,14,22,21
+        "V-302": [13, 14, 22, 21]     # V-302 controls pipes 13,14,22,21
     }
-
-def get_valve_control_mapping():
-    """Define which valves control which pipe groups"""
-    return {
-        "V-101": ["Group 1"],  # V-101 controls Group 1 (contains pipe 1)
-        "V-102": ["Group 2"],  # V-102 controls Group 2 (contains pipe 11)
-        "V-103": ["Group 3"],  # Example additional valve
-        "V-104": ["Group 4"],  # Example additional valve
-        "V-105": ["Group 5"]   # Example additional valve
-    }
-
-def get_pipe_color_based_on_groups(pipe_index, valves, valve_states):
-    """Determine pipe color based on group valve states"""
-    pipe_number = pipe_index + 1  # Convert to 1-indexed
     
-    # Get pipe groups and valve control mapping
-    pipe_groups = get_pipe_groups()
-    valve_control = get_valve_control_mapping()
-    
-    # Find which groups this pipe belongs to
-    pipe_groups_containing_this_pipe = []
-    for group_name, pipes_in_group in pipe_groups.items():
-        if pipe_number in pipes_in_group:
-            pipe_groups_containing_this_pipe.append(group_name)
-    
-    # Check if any valve controlling these groups is open
-    for group_name in pipe_groups_containing_this_pipe:
-        # Find which valves control this group
-        for valve_tag, controlled_groups in valve_control.items():
-            if group_name in controlled_groups and valve_tag in valve_states:
+    # Check each valve's dependencies
+    for valve_tag, dependent_pipes in valve_dependencies.items():
+        if valve_tag in valve_states:
+            if pipe_number in dependent_pipes:
                 if valve_states[valve_tag]:
-                    return (0, 255, 0)  # Green if controlling valve is open
+                    return (0, 255, 0)  # Green if valve is open
+                else:
+                    return (0, 0, 255)  # Blue if valve is closed
     
-    return (0, 0, 255)  # Blue if no controlling valve is open
+    # Define pipe dependencies (pipes that follow other pipes)
+    pipe_dependencies = {
+        20: 1,   # Pipe 20 follows pipe 1
+        19: 11   # Pipe 19 follows pipe 11
+    }
+    
+    # Check if this pipe depends on another pipe
+    if pipe_number in pipe_dependencies:
+        leader_pipe_number = pipe_dependencies[pipe_number]
+        leader_pipe_index = leader_pipe_number - 1  # Convert back to 0-indexed
+        if leader_pipe_index < len(st.session_state.pipes):
+            # Get the color from the leader pipe
+            leader_color = get_pipe_color_based_on_valves(leader_pipe_index, st.session_state.pipes[leader_pipe_index], valves, valve_states)
+            return leader_color
+    
+    # If no dependency, check valves normally (physical proximity)
+    pipe = pipe_coords
+    x1, y1 = pipe["x1"], pipe["y1"]  # Start point (upstream)
+    valve_proximity_threshold = 20  # pixels
+    
+    for tag, valve_data in valves.items():
+        valve_x, valve_y = valve_data["x"], valve_data["y"]
+        
+        # Calculate distance between pipe start and valve
+        distance = ((valve_x - x1)**2 + (valve_y - y1)**2)**0.5
+        
+        # If valve is close to pipe start point and is open, make pipe green
+        if distance <= valve_proximity_threshold and valve_states[tag]:
+            return (0, 255, 0)  # Green for active flow
+    
+    return (0, 0, 255)  # Blue for no flow
 
 def create_pid_with_valves_and_pipes():
     """Create P&ID image with valve indicators AND pipes"""
@@ -104,8 +111,8 @@ def create_pid_with_valves_and_pipes():
                 )
                 
                 if is_reasonable:
-                    # Get pipe color based on group valve states
-                    color = get_pipe_color_based_on_groups(i, valves, st.session_state.valve_states)
+                    # Get pipe color based on upstream valve state AND dependencies
+                    color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
                     
                     # If this pipe is selected, make it purple regardless of valve state
                     if i == st.session_state.selected_pipe:
@@ -133,7 +140,7 @@ def create_pid_with_valves_and_pipes():
             color = (0, 255, 0) if current_state else (255, 0, 0)
             
             # Draw valve indicator
-            draw.ellipse([x-8, y-8, x+8, x+8], fill=color, outline="white", width=2)
+            draw.ellipse([x-8, y-8, x+8, y+8], fill=color, outline="white", width=2)
             draw.text((x+12, y-10), tag, fill="white", stroke_fill="black", stroke_width=1)
             
         return pid_img.convert("RGB")
@@ -240,7 +247,7 @@ with col2:
         # Count pipes with active flow
         active_pipes = 0
         for i, pipe in enumerate(st.session_state.pipes):
-            color = get_pipe_color_based_on_groups(i, valves, st.session_state.valve_states)
+            color = get_pipe_color_based_on_valves(i, pipe, valves, st.session_state.valve_states)
             if color == (0, 255, 0):  # Green
                 active_pipes += 1
         
@@ -253,24 +260,20 @@ with col2:
         st.write(f"**Open Valves:** {open_valves}")
         st.write(f"**Closed Valves:** {closed_valves}")
         
-        # Show valve and group information
+        # Show valve dependencies
         st.markdown("---")
-        st.subheader("🔗 Valve & Group Control")
+        st.subheader("🔗 Valve Dependencies")
+        st.markdown("""
+        **V-301 Controls:**
+        - Pipes 2, 3, 14, 22, 21
         
-        # Display valve control mapping
-        valve_control = get_valve_control_mapping()
-        pipe_groups = get_pipe_groups()
+        **V-302 Controls:**
+        - Pipes 13, 14, 22, 21
         
-        st.write("**Valve Controls:**")
-        for valve_tag, controlled_groups in valve_control.items():
-            group_info = []
-            for group_name in controlled_groups:
-                pipes_in_group = pipe_groups[group_name]
-                group_info.append(f"{group_name} (Pipes: {', '.join(map(str, pipes_in_group))})")
-            
-            valve_state = st.session_state.valve_states.get(valve_tag, False)
-            status_icon = "🟢" if valve_state else "🔴"
-            st.write(f"{status_icon} **{valve_tag}**: {', '.join(group_info)}")
+        **Pipe Dependencies:**
+        - Pipe 20 follows Pipe 1
+        - Pipe 19 follows Pipe 11
+        """)
         
         # Show selected pipe info
         if st.session_state.selected_pipe is not None:
@@ -281,30 +284,23 @@ with col2:
             st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
             
             # Check flow status for selected pipe
-            color = get_pipe_color_based_on_groups(st.session_state.selected_pipe, valves, st.session_state.valve_states)
+            color = get_pipe_color_based_on_valves(st.session_state.selected_pipe, pipe, valves, st.session_state.valve_states)
             flow_status = "🟢 ACTIVE FLOW" if color == (0, 255, 0) else "🔵 NO FLOW"
             st.write(f"**Flow Status:** {flow_status}")
             
-            # Show which groups and valves control this pipe
-            pipe_number = st.session_state.selected_pipe + 1
-            controlling_groups = []
+            # Show which valves control this pipe
             controlling_valves = []
+            valve_dependencies = {
+                "V-301": [2, 3, 14, 22, 21],
+                "V-302": [13, 14, 22, 21]
+            }
             
-            pipe_groups = get_pipe_groups()
-            valve_control = get_valve_control_mapping()
+            for valve_tag, pipes_list in valve_dependencies.items():
+                if (st.session_state.selected_pipe + 1) in pipes_list:
+                    controlling_valves.append(valve_tag)
             
-            for group_name, pipes_in_group in pipe_groups.items():
-                if pipe_number in pipes_in_group:
-                    controlling_groups.append(group_name)
-                    # Find valves that control this group
-                    for valve_tag, controlled_groups in valve_control.items():
-                        if group_name in controlled_groups:
-                            controlling_valves.append(valve_tag)
-            
-            if controlling_groups:
-                st.write(f"**Member of Groups:** {', '.join(controlling_groups)}")
             if controlling_valves:
-                st.write(f"**Controlled by Valves:** {', '.join(controlling_valves)}")
+                st.write(f"**Controlled by:** {', '.join(controlling_valves)}")
         else:
             st.markdown("---")
             st.subheader("ℹ️ No Pipe Selected")
@@ -313,12 +309,12 @@ with col2:
         st.markdown("---")
         st.subheader("🔧 How It Works")
         st.markdown("""
-        - **V-101** controls any group containing **Pipe 1**
-        - **V-102** controls any group containing **Pipe 11**
-        - **Open a valve** → Controlled pipe groups turn **GREEN**
-        - **Close a valve** → Controlled pipe groups turn **BLUE**
+        - **Open a valve** → Controlled pipes turn **GREEN**
+        - **Close a valve** → Controlled pipes turn **BLUE**
         - **Click a pipe** → Highlights it in **PURPLE**
-        - Pipes can belong to multiple groups
+        - **Unselect All** → Removes purple highlighting
+        - **Valve Dependencies** override physical proximity
+        - Some pipes follow the color of other pipes
         """)
 
 # Debug information
@@ -332,21 +328,10 @@ with st.expander("🔧 Debug Information"):
         color = "🟢" if state else "🔴"
         st.write(f"{color} {tag}: {status}")
     
-    # Show pipe groups and control mapping
-    st.subheader("Pipe Groups Configuration")
-    pipe_groups = get_pipe_groups()
-    for group_name, pipes_in_group in pipe_groups.items():
-        st.write(f"**{group_name}:** Pipes {pipes_in_group}")
-    
-    st.subheader("Valve Control Mapping")
-    valve_control = get_valve_control_mapping()
-    for valve_tag, controlled_groups in valve_control.items():
-        st.write(f"**{valve_tag}:** Controls {controlled_groups}")
-    
     # Show pipe colors
     st.subheader("Pipe Colors")
     for i in range(len(st.session_state.pipes)):
-        color = get_pipe_color_based_on_groups(i, valves, st.session_state.valve_states)
+        color = get_pipe_color_based_on_valves(i, st.session_state.pipes[i], valves, st.session_state.valve_states)
         color_name = "GREEN" if color == (0, 255, 0) else "BLUE"
         st.write(f"Pipe {i+1}: {color_name}")
     
