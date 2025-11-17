@@ -192,6 +192,11 @@ with st.sidebar:
     st.header("📋 Pipe Selection")
     st.markdown("Click on a pipe to highlight it")
     
+    # UNSELECT ALL PIPES BUTTON
+    if st.button("🚫 Unselect All Pipes", use_container_width=True, type="secondary"):
+        st.session_state.selected_pipe = None
+        st.rerun()
+    
     # Pipe selection buttons
     if st.session_state.pipes:
         for i in range(len(st.session_state.pipes)):
@@ -222,7 +227,14 @@ col1, col2 = st.columns([3, 1])
 with col1:
     # Create and display the P&ID with valve indicators AND pipes
     composite_img = create_pid_with_valves_and_pipes()
-    st.image(composite_img, use_container_width=True, caption="🟣 Purple = Selected | 🟢 Green = Flow Active | 🔵 Blue = No Flow")
+    
+    # Show selection status
+    if st.session_state.selected_pipe is not None:
+        caption = f"🟣 Pipe {st.session_state.selected_pipe + 1} Selected | 🟢 Green = Flow Active | 🔵 Blue = No Flow"
+    else:
+        caption = "🟢 Green = Flow Active | 🔵 Blue = No Flow (No pipe selected)"
+    
+    st.image(composite_img, use_container_width=True, caption=caption)
 
 with col2:
     # Right sidebar for detailed status
@@ -287,6 +299,10 @@ with col2:
             color = get_pipe_color_based_on_valves(st.session_state.selected_pipe, pipe, valves, st.session_state.valve_states)
             flow_status = "🟢 ACTIVE FLOW" if color == (0, 255, 0) else "🔵 NO FLOW"
             st.write(f"**Flow Status:** {flow_status}")
+        else:
+            st.markdown("---")
+            st.subheader("ℹ️ No Pipe Selected")
+            st.info("Click on a pipe in the sidebar to select and inspect it")
         
         st.markdown("---")
         st.subheader("🔧 How It Works")
@@ -294,6 +310,7 @@ with col2:
         - **Open a valve** → Connected pipes turn **GREEN**
         - **Close a valve** → Connected pipes turn **BLUE**
         - **Click a pipe** → Highlights it in **PURPLE**
+        - **Unselect All** → Removes purple highlighting
         - Some pipes follow the color of other pipes (see dependencies)
         - **V-101 Control**:
           - **V-101 CLOSED** → Pipes 3,4,21,22 forced to BLUE
