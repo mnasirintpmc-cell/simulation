@@ -50,6 +50,16 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
     v302_pipes = [4, 13, 14, 22, 21]
     v103_pipes = [8, 17, 15, 16]  # V-103 controls pipes 8,17,15,16
     
+    # DEBUG: Check V-103 specifically
+    if "V-103" in valve_states:
+        print(f"DEBUG V-103: Pipe {pipe_number}, V-103 state: {valve_states['V-103']}, In v103_pipes: {pipe_number in v103_pipes}")
+        if pipe_number in v103_pipes:
+            print(f"DEBUG V-103: Controlling pipe {pipe_number} with state {valve_states['V-103']}")
+            if valve_states["V-103"]:
+                return (0, 255, 0)  # Green
+            else:
+                return (0, 0, 255)  # Blue
+    
     # Check V-301 first
     if "V-301" in valve_states:
         if pipe_number in v301_pipes:
@@ -62,14 +72,6 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
     if "V-302" in valve_states:
         if pipe_number in v302_pipes:
             if valve_states["V-302"]:
-                return (0, 255, 0)  # Green
-            else:
-                return (0, 0, 255)  # Blue
-    
-    # Check V-103 third
-    if "V-103" in valve_states:
-        if pipe_number in v103_pipes:
-            if valve_states["V-103"]:
                 return (0, 255, 0)  # Green
             else:
                 return (0, 0, 255)  # Blue
@@ -102,6 +104,7 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
         
         # If valve is close to pipe start point and is open, make pipe green
         if distance <= valve_proximity_threshold and valve_states[tag]:
+            print(f"DEBUG Physical: Pipe {pipe_number} controlled by physical proximity to {tag}")
             return (0, 255, 0)  # Green for active flow
     
     return (0, 0, 255)  # Blue for no flow
