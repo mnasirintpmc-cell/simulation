@@ -68,7 +68,8 @@ def get_valve_to_leader_mapping():
     return {
         "V-301": 2,   # V-301 controls Pipe 2 (leader)
         "V-302": 13,  # V-302 controls Pipe 13 (leader)
-        "V-103": 5,   # V-103 controls Pipe 5 (leader) - includes pipe 8
+        "V-105": 5,   # V-105 controls Pipe 5 (leader) - activates 5,6,7,8,9,18
+        "V-103": 17,  # V-103 controls Pipe 17 (leader) - activates 8,15,16,17
         "V-104": 22   # V-104 controls Pipe 22 directly
     }
 
@@ -86,7 +87,7 @@ def get_leading_pipe_color(leader_pipe_index, valves, valve_states):
             else:
                 return (0, 0, 255)  # Blue if controlling valve is closed
     
-    # Normal proximity-based logic for other pipes (this preserves V-105 functionality)
+    # Normal proximity-based logic for other pipes
     leader_pipe = st.session_state.pipes[leader_pipe_index]
     x1, y1 = leader_pipe["x1"], leader_pipe["y1"]
     valve_proximity_threshold = 20
@@ -137,11 +138,11 @@ def get_pipe_color_based_on_leader_system(pipe_index, valves, valve_states):
                 leader_color = get_leading_pipe_color(leader_pipe_index, valves, valve_states)
                 return leader_color
     
-    # THIRD: If pipe doesn't belong to any group, use proximity-based logic (this preserves V-105)
+    # THIRD: If pipe doesn't belong to any group, use proximity-based logic
     return get_pipe_color_based_on_proximity(pipe_index, valves, valve_states)
 
 def get_pipe_color_based_on_proximity(pipe_index, valves, valve_states):
-    """Determine pipe color based on valve proximity - PRESERVES ALL EXISTING FUNCTIONALITY"""
+    """Determine pipe color based on valve proximity"""
     pipe = st.session_state.pipes[pipe_index]
     
     # Check if any valve is near the pipe start
@@ -429,17 +430,15 @@ with col2:
     - **Pipe 11** → **Pipes 10, 19**
     - **Pipe 2** → **Pipes 3,4,14,21,22** (controlled by V-301)
     - **Pipe 13** → **Pipes 14,4,21,22** (controlled by V-302)
-    - **Pipe 5** → **Pipes 6,7,8,9,18** (controlled by V-103)
-    - **Pipe 17** → **Pipes 16,15,8**
+    - **Pipe 5** → **Pipes 6,7,8,9,18** (controlled by V-105)
+    - **Pipe 17** → **Pipes 16,15,8** (controlled by V-103)
     
     **Direct Valve Control:**
     - **V-301** → **Pipe 2** → Activates Pipes 3,4,14,21,22
     - **V-302** → **Pipe 13** → Activates Pipes 14,4,21,22
-    - **V-103** → **Pipe 5** → Activates Pipes 6,7,8,9,18
+    - **V-105** → **Pipe 5** → Activates Pipes 6,7,8,9,18
+    - **V-103** → **Pipe 17** → Activates Pipes 16,15,8
     - **V-104** → **Pipe 22** (direct control)
-    
-    **Proximity Control (Preserved):**
-    - **V-105** and other valves still work based on proximity to pipe starts
     
     **Color Coding:**
     - 🟢 **GREEN** = Active Flow
