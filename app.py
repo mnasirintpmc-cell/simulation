@@ -48,25 +48,28 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
     # HARDCODED VALVE DEPENDENCIES
     v301_pipes = [2, 3, 4, 14, 22, 21]
     v302_pipes = [4, 13, 14, 22, 21]
+    v103_pipes = [8, 17, 15, 16]  # V-103 controls pipes 8,17,15,16
     
-    # TEST: Force V-301 to work
+    # Check V-301 first
     if "V-301" in valve_states:
-        print(f"TEST: V-301 found! State: {valve_states['V-301']}, Checking pipe {pipe_number} in {v301_pipes}")
         if pipe_number in v301_pipes:
-            print(f"TEST: Pipe {pipe_number} IS in V-301 pipes list!")
             if valve_states["V-301"]:
-                print(f"TEST: V-301 is OPEN, Pipe {pipe_number} should be GREEN")
                 return (0, 255, 0)  # Green
             else:
-                print(f"TEST: V-301 is CLOSED, Pipe {pipe_number} should be BLUE")
                 return (0, 0, 255)  # Blue
-        else:
-            print(f"TEST: Pipe {pipe_number} is NOT in V-301 pipes list")
     
-    # Check V-302
+    # Check V-302 second
     if "V-302" in valve_states:
         if pipe_number in v302_pipes:
             if valve_states["V-302"]:
+                return (0, 255, 0)  # Green
+            else:
+                return (0, 0, 255)  # Blue
+    
+    # Check V-103 third
+    if "V-103" in valve_states:
+        if pipe_number in v103_pipes:
+            if valve_states["V-103"]:
                 return (0, 255, 0)  # Green
             else:
                 return (0, 0, 255)  # Blue
@@ -281,6 +284,9 @@ with col2:
         **V-302 Controls:**
         - Pipes 4, 13, 14, 22, 21
         
+        **V-103 Controls:**
+        - Pipes 8, 17, 15, 16
+        
         **Pipe Dependencies:**
         - Pipe 20 follows Pipe 1
         - Pipe 19 follows Pipe 11
@@ -302,12 +308,15 @@ with col2:
             # Show which valves control this pipe
             v301_pipes = [2, 3, 4, 14, 22, 21]
             v302_pipes = [4, 13, 14, 22, 21]
+            v103_pipes = [8, 17, 15, 16]
             
             controlling_valves = []
             if (st.session_state.selected_pipe + 1) in v301_pipes:
                 controlling_valves.append("V-301")
             if (st.session_state.selected_pipe + 1) in v302_pipes:
                 controlling_valves.append("V-302")
+            if (st.session_state.selected_pipe + 1) in v103_pipes:
+                controlling_valves.append("V-103")
             
             if controlling_valves:
                 st.write(f"**Controlled by:** {', '.join(controlling_valves)}")
@@ -342,6 +351,7 @@ with st.expander("🔧 Debug Information"):
     st.subheader("Pipe Colors and Valve Control")
     v301_pipes = [2, 3, 4, 14, 22, 21]
     v302_pipes = [4, 13, 14, 22, 21]
+    v103_pipes = [8, 17, 15, 16]
     
     for i in range(len(st.session_state.pipes)):
         color = get_pipe_color_based_on_valves(i, st.session_state.pipes[i], valves, st.session_state.valve_states)
@@ -353,6 +363,8 @@ with st.expander("🔧 Debug Information"):
             controlling_valves.append("V-301")
         if (i + 1) in v302_pipes:
             controlling_valves.append("V-302")
+        if (i + 1) in v103_pipes:
+            controlling_valves.append("V-103")
         
         if controlling_valves:
             st.write(f"Pipe {i+1}: {color_name} (controlled by: {', '.join(controlling_valves)})")
