@@ -56,6 +56,10 @@ def get_pipe_groups_with_leaders():
         "Group_5": {
             "leader": 5,           # Pipe 5 is the leader
             "followers": [6, 7, 8, 9, 18]  # Pipe 5 leads 6,7,8,9,18
+        },
+        "Group_6": {
+            "leader": 17,          # Pipe 17 is the leader
+            "followers": [16, 15, 8]  # Pipe 17 leads 16,15,8
         }
     }
 
@@ -409,6 +413,7 @@ with col2:
     - **Pipe 2** → **Pipes 3,4,14,21,22** (controlled by V-301)
     - **Pipe 13** → **Pipes 14,4,21,22** (controlled by V-302)
     - **Pipe 5** → **Pipes 6,7,8,9,18**
+    - **Pipe 17** → **Pipes 16,15,8**
     
     **Valve Control:**
     - **V-301** directly controls Pipe 2 and its followers
