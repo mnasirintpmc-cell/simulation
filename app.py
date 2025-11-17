@@ -52,6 +52,10 @@ def get_pipe_groups_with_leaders():
         "Group_4": {
             "leader": 13,          # Pipe 13 is the leader
             "followers": [14, 4, 21, 22]  # Pipe 13 leads 14,4,21,22
+        },
+        "Group_5": {
+            "leader": 5,           # Pipe 5 is the leader
+            "followers": [6, 7, 8, 9, 18]  # Pipe 5 leads 6,7,8,9,18
         }
     }
 
@@ -407,11 +411,19 @@ with col2:
     - **Pipe 11** → **Pipes 10, 19**
     - **Pipe 2** → **Pipes 3,4,14,21,22**
     - **Pipe 13** → **Pipes 14,4,21,22**
+    - **Pipe 5** → **Pipes 6,7,8,9,18**
     
     **Special Valve Logic:**
     - **V-301 OR V-302** control Pipes 2,3,4,13,14,21,22
     - If EITHER valve is open → All controlled pipes turn GREEN
     - If BOTH valves are closed → All controlled pipes turn BLUE
+    
+    **Color Coding:**
+    - 🟢 **GREEN** = Active Flow
+    - 🔵 **BLUE** = No Flow
+    - 🟣 **PURPLE** = Selected Pipe
+    - 🔴 **RED** = Closed Valve
+    - 🟢 **GREEN** = Open Valve
     """)
 
 # Debug information
