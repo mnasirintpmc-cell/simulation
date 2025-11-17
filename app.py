@@ -47,17 +47,22 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
     
     # HARDCODED V-101 LOGIC
     if "V-101" in valve_states and not valve_states["V-101"]:
-        # If V-101 is closed, pipes 3,4,22,21 are forced to BLUE
+        # If V-101 is closed, pipes 3,4,21,22 are forced to BLUE
         if pipe_number in [3, 4, 21, 22]:
             return (0, 0, 255)  # Blue
     
-    # Define pipe dependencies
+    # If V-101 is open, pipes 3,4,21,22 should follow V-301 directly
+    if "V-101" in valve_states and valve_states["V-101"]:
+        if pipe_number in [3, 4, 21, 22]:
+            # These pipes follow V-301 when V-101 is open
+            if "V-301" in valve_states and valve_states["V-301"]:
+                return (0, 255, 0)  # Green
+            else:
+                return (0, 0, 255)  # Blue
+    
+    # Define other pipe dependencies
     pipe_dependencies = {
         20: 1,   # Pipe 20 follows pipe 1
-        3: 2,    # Pipe 3 follows pipe 2
-        4: 2,    # Pipe 4 follows pipe 2
-        22: 2,   # Pipe 22 follows pipe 2
-        21: 2,   # Pipe 21 follows pipe 2
         14: 11,  # Pipe 14 follows pipe 11
         19: 11   # Pipe 19 follows pipe 11
     }
@@ -264,11 +269,10 @@ with col2:
         st.subheader("🔗 Pipe Dependencies")
         st.markdown("""
         - **Pipe 20** follows Pipe 1
-        - **Pipes 3, 4, 21, 22** follow Pipe 2  
         - **Pipes 19, 10** follow Pipe 11
         - **Pipe 14** follows Pipe 11
         - **V-101 CLOSED** → Pipes 3,4,21,22 forced to BLUE
-        - **V-101 OPEN** → Pipes 3,4,21,22 follow V-301
+        - **V-101 OPEN** → Pipes 3,4,21,22 follow V-301 directly
         """)
         
         # Show selected pipe info
@@ -293,7 +297,7 @@ with col2:
         - Some pipes follow the color of other pipes (see dependencies)
         - **V-101 Control**:
           - **V-101 CLOSED** → Pipes 3,4,21,22 forced to BLUE
-          - **V-101 OPEN** → Pipes 3,4,21,22 follow V-301
+          - **V-101 OPEN** → Pipes 3,4,21,22 follow V-301 directly
         - Valve connects to pipe if it's near the pipe's **start point (x1)**
         """)
 
