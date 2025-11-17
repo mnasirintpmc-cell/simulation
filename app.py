@@ -48,7 +48,7 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
     # Define valve dependencies with their specific pipes
     valve_dependencies = {
         "V-301": [2, 3, 4, 14, 22, 21],  # V-301 controls pipes 2,3,4,14,22,21
-        "V-302": [13, 14, 22, 21]        # V-302 controls pipes 13,14,22,21
+        "V-302": [4, 13, 14, 22, 21]     # V-302 controls pipes 4,13,14,22,21
     }
     
     # Check each valve's dependencies
@@ -268,7 +268,7 @@ with col2:
         - Pipes 2, 3, 4, 14, 22, 21
         
         **V-302 Controls:**
-        - Pipes 13, 14, 22, 21
+        - Pipes 4, 13, 14, 22, 21
         
         **Pipe Dependencies:**
         - Pipe 20 follows Pipe 1
@@ -292,7 +292,7 @@ with col2:
             controlling_valves = []
             valve_dependencies = {
                 "V-301": [2, 3, 4, 14, 22, 21],
-                "V-302": [13, 14, 22, 21]
+                "V-302": [4, 13, 14, 22, 21]
             }
             
             for valve_tag, pipes_list in valve_dependencies.items():
