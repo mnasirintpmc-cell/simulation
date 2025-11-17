@@ -9,7 +9,7 @@ st.set_page_config(layout="wide")
 PID_FILE = "P&ID.png"
 DATA_FILE = "valves.json"
 PIPES_DATA_FILE = "pipes.json"
-PROCESS_RULES_FILE = "process_rules.json"
+PIPE_GROUPS_FILE = "pipe_groups.json"
 
 def load_valves():
     if os.path.exists(DATA_FILE):
@@ -27,70 +27,58 @@ def save_pipes(pipes_data):
     with open(PIPES_DATA_FILE, "w") as f:
         json.dump(pipes_data, f, indent=2)
 
-def load_process_rules():
-    """Load process rules that define pipe colors based on valve combinations"""
-    default_rules = {
-        "processes": {
-            "process_1": {
-                "name": "Main Flow Process",
-                "description": "Flow through V-301 and V-302 system",
-                "valve_conditions": {
-                    "V-301": "OPEN",
-                    "V-302": "OPEN"
-                },
-                "pipe_colors": {
-                    2: "GREEN", 3: "GREEN", 4: "GREEN", 13: "GREEN", 14: "GREEN", 21: "GREEN", 22: "GREEN"
-                }
+def load_pipe_groups():
+    """Load pipe groups based on mechanical construction"""
+    default_groups = {
+        "pipe_groups": {
+            "main_flow_line": {
+                "name": "Main Flow Line",
+                "description": "Primary flow path through the system",
+                "pipes": [1, 2, 3, 4, 5, 6, 7],
+                "valves": ["V-101", "V-102", "V-103"]
             },
-            "process_2": {
-                "name": "V-103 System",
-                "description": "Flow through V-103 system",
-                "valve_conditions": {
-                    "V-103": "OPEN"
-                },
-                "pipe_colors": {
-                    8: "GREEN", 15: "GREEN", 16: "GREEN", 17: "GREEN"
-                }
+            "secondary_flow_line": {
+                "name": "Secondary Flow Line", 
+                "description": "Secondary flow path",
+                "pipes": [8, 9, 10, 11, 12, 13],
+                "valves": ["V-201", "V-202"]
             },
-            "process_3": {
-                "name": "V-301 Only",
-                "description": "Flow only through V-301",
-                "valve_conditions": {
-                    "V-301": "OPEN",
-                    "V-302": "CLOSED"
-                },
-                "pipe_colors": {
-                    2: "GREEN", 3: "GREEN", 4: "GREEN", 14: "GREEN", 21: "GREEN", 22: "GREEN"
-                }
+            "bypass_line": {
+                "name": "Bypass Line",
+                "description": "Bypass flow path",
+                "pipes": [14, 15, 16, 17],
+                "valves": ["V-301", "V-302"]
             },
-            "process_4": {
-                "name": "V-302 Only", 
-                "description": "Flow only through V-302",
-                "valve_conditions": {
-                    "V-301": "CLOSED",
-                    "V-302": "OPEN"
-                },
-                "pipe_colors": {
-                    4: "GREEN", 13: "GREEN", 14: "GREEN", 21: "GREEN", 22: "GREEN"
-                }
+            "utility_line": {
+                "name": "Utility Line",
+                "description": "Utility service line",
+                "pipes": [18, 19, 20, 21, 22],
+                "valves": ["V-401", "V-402"]
             }
         },
-        "pipe_dependencies": {
-            20: 1,   # Pipe 20 follows pipe 1
-            19: 11   # Pipe 19 follows pipe 11
+        "valve_control": {
+            "V-101": ["main_flow_line"],
+            "V-102": ["main_flow_line"], 
+            "V-103": ["main_flow_line"],
+            "V-201": ["secondary_flow_line"],
+            "V-202": ["secondary_flow_line"],
+            "V-301": ["bypass_line"],
+            "V-302": ["bypass_line"],
+            "V-401": ["utility_line"],
+            "V-402": ["utility_line"]
         }
     }
     
-    if os.path.exists(PROCESS_RULES_FILE):
+    if os.path.exists(PIPE_GROUPS_FILE):
         try:
-            with open(PROCESS_RULES_FILE, "r") as f:
-                user_rules = json.load(f)
-                # Merge with default rules
-                default_rules.update(user_rules)
+            with open(PIPE_GROUPS_FILE, "r") as f:
+                user_groups = json.load(f)
+                # Merge with default groups
+                default_groups.update(user_groups)
         except:
-            st.warning("Error loading process_rules.json, using default rules")
+            st.warning("Error loading pipe_groups.json, using default groups")
     
-    return default_rules
+    return default_groups
 
 def get_image_dimensions():
     """Get the dimensions of the P&ID image"""
@@ -107,46 +95,30 @@ def is_pipe_visible(pipe, img_width=1200, img_height=800):
             0 <= pipe["y1"] <= img_height and 
             0 <= pipe["y2"] <= img_height)
 
-def check_process_conditions(valve_states, process_conditions):
-    """Check if all valve conditions for a process are met"""
-    for valve, required_state in process_conditions.items():
-        if valve not in valve_states:
-            return False
-        actual_state = "OPEN" if valve_states[valve] else "CLOSED"
-        if actual_state != required_state:
-            return False
-    return True
-
-def get_pipe_color_based_on_process(pipe_index, pipe_coords, valves, valve_states, process_rules):
-    """Determine pipe color based on active processes and process rules"""
+def get_pipe_color_based_on_groups(pipe_index, pipe_coords, valves, valve_states, pipe_groups):
+    """Determine pipe color based on pipe groups and valve control"""
     pipe_number = pipe_index + 1  # Convert to 1-indexed for clarity
     
-    # First, check if any process rules apply to this pipe
-    active_processes = []
+    # Find which groups this pipe belongs to
+    pipe_groups_list = []
+    for group_id, group_data in pipe_groups["pipe_groups"].items():
+        if pipe_number in group_data["pipes"]:
+            pipe_groups_list.append(group_id)
     
-    for process_id, process_data in process_rules["processes"].items():
-        if check_process_conditions(valve_states, process_data["valve_conditions"]):
-            active_processes.append(process_data["name"])
-            # If this pipe is defined in the process, use that color
-            if pipe_number in process_data["pipe_colors"]:
-                color_rule = process_data["pipe_colors"][pipe_number]
-                if color_rule == "GREEN":
-                    return (0, 255, 0)  # Green
-                elif color_rule == "BLUE":
-                    return (0, 0, 255)  # Blue
+    # If pipe belongs to any groups, check if any controlling valves are open
+    if pipe_groups_list:
+        # Check all valves that control these groups
+        for group_id in pipe_groups_list:
+            # Find valves that control this group
+            for valve_tag, controlled_groups in pipe_groups["valve_control"].items():
+                if group_id in controlled_groups and valve_tag in valve_states:
+                    if valve_states[valve_tag]:
+                        return (0, 255, 0)  # Green - at least one controlling valve is open
+        
+        # If we get here, all controlling valves for all groups are closed
+        return (0, 0, 255)  # Blue - all controlling valves are closed
     
-    # Check pipe dependencies
-    if "pipe_dependencies" in process_rules:
-        pipe_dependencies = process_rules["pipe_dependencies"]
-        if pipe_number in pipe_dependencies:
-            leader_pipe_number = pipe_dependencies[pipe_number]
-            leader_pipe_index = leader_pipe_number - 1  # Convert back to 0-indexed
-            if leader_pipe_index < len(st.session_state.pipes):
-                # Get the color from the leader pipe
-                leader_color = get_pipe_color_based_on_process(leader_pipe_index, st.session_state.pipes[leader_pipe_index], valves, valve_states, process_rules)
-                return leader_color
-    
-    # If no process rule applies, check physical proximity to valves
+    # If pipe doesn't belong to any group, check physical proximity
     pipe = pipe_coords
     x1, y1 = pipe["x1"], pipe["y1"]  # Start point (upstream)
     valve_proximity_threshold = 20  # pixels
@@ -182,8 +154,8 @@ def create_pid_with_valves_and_pipes():
                 )
                 
                 if is_reasonable:
-                    # Get pipe color based on process rules
-                    color = get_pipe_color_based_on_process(i, pipe, valves, st.session_state.valve_states, st.session_state.process_rules)
+                    # Get pipe color based on pipe groups
+                    color = get_pipe_color_based_on_groups(i, pipe, valves, st.session_state.valve_states, st.session_state.pipe_groups)
                     
                     # If this pipe is selected, make it purple regardless of valve state
                     if i == st.session_state.selected_pipe:
@@ -225,7 +197,7 @@ def create_pid_with_valves_and_pipes():
 # Load data
 valves = load_valves()
 pipes = load_pipes()
-process_rules = load_process_rules()
+pipe_groups = load_pipe_groups()
 
 # Initialize session state
 if "valve_states" not in st.session_state:
@@ -237,11 +209,11 @@ if "selected_pipe" not in st.session_state:
 if "pipes" not in st.session_state:
     st.session_state.pipes = pipes
 
-if "process_rules" not in st.session_state:
-    st.session_state.process_rules = process_rules
+if "pipe_groups" not in st.session_state:
+    st.session_state.pipe_groups = pipe_groups
 
-if "show_process_editor" not in st.session_state:
-    st.session_state.show_process_editor = False
+if "show_group_editor" not in st.session_state:
+    st.session_state.show_group_editor = False
 
 # Main app
 st.title("P&ID Interactive Simulation")
@@ -274,9 +246,9 @@ with st.sidebar:
         st.session_state.selected_pipe = None
         st.rerun()
     
-    # PROCESS EDITOR TOGGLE
-    if st.button("⚙️ Show/Hide Process Editor", use_container_width=True):
-        st.session_state.show_process_editor = not st.session_state.show_process_editor
+    # GROUP EDITOR TOGGLE
+    if st.button("🏗️ Show/Hide Pipe Group Editor", use_container_width=True):
+        st.session_state.show_group_editor = not st.session_state.show_group_editor
         st.rerun()
     
     # Pipe selection buttons
@@ -304,21 +276,21 @@ with st.sidebar:
                 st.session_state.selected_pipe = i
                 st.rerun()
 
-# Process Editor
-if st.session_state.show_process_editor:
-    st.header("⚙️ Process Rules Editor")
-    st.markdown("Define process logic that controls pipe colors based on valve combinations")
+# Pipe Group Editor
+if st.session_state.show_group_editor:
+    st.header("🏗️ Pipe Group Editor")
+    st.markdown("Group pipes based on mechanical construction and assign controlling valves")
     
-    with st.expander("📝 Edit Process Rules", expanded=True):
-        st.json(st.session_state.process_rules)
+    with st.expander("📝 Edit Pipe Groups", expanded=True):
+        st.json(st.session_state.pipe_groups)
         
-        if st.button("💾 Save Process Rules"):
+        if st.button("💾 Save Pipe Groups"):
             try:
-                with open(PROCESS_RULES_FILE, "w") as f:
-                    json.dump(st.session_state.process_rules, f, indent=2)
-                st.success("Process rules saved!")
+                with open(PIPE_GROUPS_FILE, "w") as f:
+                    json.dump(st.session_state.pipe_groups, f, indent=2)
+                st.success("Pipe groups saved!")
             except Exception as e:
-                st.error(f"Error saving process rules: {e}")
+                st.error(f"Error saving pipe groups: {e}")
 
 # Main content area - P&ID display
 col1, col2 = st.columns([3, 1])
@@ -336,21 +308,31 @@ with col1:
 
 with col2:
     # Right sidebar for detailed status
-    st.header("🔍 Process Status")
+    st.header("🔍 Pipe Group Status")
     st.markdown("---")
     
-    # Show active processes
-    st.subheader("📊 Active Processes")
-    active_processes = []
-    for process_id, process_data in st.session_state.process_rules["processes"].items():
-        if check_process_conditions(st.session_state.valve_states, process_data["valve_conditions"]):
-            active_processes.append(process_data["name"])
+    # Show active pipe groups
+    st.subheader("🏗️ Active Pipe Groups")
+    active_groups = []
     
-    if active_processes:
-        for process in active_processes:
-            st.success(f"✅ {process}")
+    for group_id, group_data in st.session_state.pipe_groups["pipe_groups"].items():
+        # Check if any controlling valve for this group is open
+        group_valves = []
+        for valve_tag, controlled_groups in st.session_state.pipe_groups["valve_control"].items():
+            if group_id in controlled_groups:
+                group_valves.append(valve_tag)
+        
+        # Check if any of these valves are open
+        has_open_valve = any(st.session_state.valve_states.get(valve, False) for valve in group_valves)
+        
+        if has_open_valve:
+            active_groups.append(group_data["name"])
+    
+    if active_groups:
+        for group in active_groups:
+            st.success(f"✅ {group}")
     else:
-        st.info("ℹ️ No active processes")
+        st.info("ℹ️ No active pipe groups")
     
     # Show valve status summary
     st.markdown("---")
@@ -369,9 +351,29 @@ with col2:
         st.write(f"End: ({pipe['x2']}, {pipe['y2']})")
         
         # Check flow status for selected pipe
-        color = get_pipe_color_based_on_process(st.session_state.selected_pipe, pipe, valves, st.session_state.valve_states, st.session_state.process_rules)
+        color = get_pipe_color_based_on_groups(st.session_state.selected_pipe, pipe, valves, st.session_state.valve_states, st.session_state.pipe_groups)
         flow_status = "🟢 ACTIVE FLOW" if color == (0, 255, 0) else "🔵 NO FLOW"
         st.write(f"**Flow Status:** {flow_status}")
+        
+        # Show which groups this pipe belongs to
+        pipe_groups_list = []
+        for group_id, group_data in st.session_state.pipe_groups["pipe_groups"].items():
+            if (st.session_state.selected_pipe + 1) in group_data["pipes"]:
+                pipe_groups_list.append(group_data["name"])
+        
+        if pipe_groups_list:
+            st.write(f"**Pipe Groups:** {', '.join(pipe_groups_list)}")
+            
+            # Show controlling valves for these groups
+            controlling_valves = []
+            for group_id, group_data in st.session_state.pipe_groups["pipe_groups"].items():
+                if (st.session_state.selected_pipe + 1) in group_data["pipes"]:
+                    for valve_tag, controlled_groups in st.session_state.pipe_groups["valve_control"].items():
+                        if group_id in controlled_groups:
+                            controlling_valves.append(valve_tag)
+            
+            if controlling_valves:
+                st.write(f"**Controlled by:** {', '.join(set(controlling_valves))}")
     else:
         st.markdown("---")
         st.subheader("ℹ️ No Pipe Selected")
@@ -380,28 +382,34 @@ with col2:
     st.markdown("---")
     st.subheader("🔧 How It Works")
     st.markdown("""
-    - **Process-based logic** controls pipe colors
-    - **Valve combinations** define active processes
-    - **Process rules** determine which pipes turn green
-    - **Edit process rules** in the Process Editor
-    - Some pipes follow the color of other pipes
+    - **Pipe Groups** are based on mechanical construction
+    - **Valves control entire groups** of pipes
+    - **Open a valve** → All pipes in controlled groups turn GREEN
+    - **Close all valves** for a group → All pipes in group turn BLUE
+    - **Edit pipe groups** in the Group Editor
     """)
 
 # Debug information
 with st.expander("🔧 Debug Information"):
     st.write("**Image Dimensions:**", get_image_dimensions())
     
-    # Show current process analysis
-    st.subheader("Process Analysis")
-    for process_id, process_data in st.session_state.process_rules["processes"].items():
-        is_active = check_process_conditions(st.session_state.valve_states, process_data["valve_conditions"])
-        status = "🟢 ACTIVE" if is_active else "🔵 INACTIVE"
-        st.write(f"{status} **{process_data['name']}**")
-        st.write(f"  Conditions: {process_data['valve_conditions']}")
+    # Show pipe group analysis
+    st.subheader("Pipe Group Analysis")
+    for group_id, group_data in st.session_state.pipe_groups["pipe_groups"].items():
+        group_valves = []
+        for valve_tag, controlled_groups in st.session_state.pipe_groups["valve_control"].items():
+            if group_id in controlled_groups:
+                group_valves.append(valve_tag)
+        
+        has_open_valve = any(st.session_state.valve_states.get(valve, False) for valve in group_valves)
+        status = "🟢 ACTIVE" if has_open_valve else "🔵 INACTIVE"
+        st.write(f"{status} **{group_data['name']}**")
+        st.write(f"  Pipes: {group_data['pipes']}")
+        st.write(f"  Controlling Valves: {group_valves}")
     
     # Show pipe colors
     st.subheader("Pipe Colors")
     for i in range(len(st.session_state.pipes)):
-        color = get_pipe_color_based_on_process(i, st.session_state.pipes[i], valves, st.session_state.valve_states, st.session_state.process_rules)
+        color = get_pipe_color_based_on_groups(i, st.session_state.pipes[i], valves, st.session_state.valve_states, st.session_state.pipe_groups)
         color_name = "GREEN" if color == (0, 255, 0) else "BLUE"
         st.write(f"Pipe {i+1}: {color_name}")
