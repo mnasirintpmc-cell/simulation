@@ -86,7 +86,7 @@ def get_leading_pipe_color(leader_pipe_index, valves, valve_states):
             else:
                 return (0, 0, 255)  # Blue if controlling valve is closed
     
-    # Normal proximity-based logic for other pipes
+    # Normal proximity-based logic for other pipes (this preserves V-105 functionality)
     leader_pipe = st.session_state.pipes[leader_pipe_index]
     x1, y1 = leader_pipe["x1"], leader_pipe["y1"]
     valve_proximity_threshold = 20
@@ -137,11 +137,11 @@ def get_pipe_color_based_on_leader_system(pipe_index, valves, valve_states):
                 leader_color = get_leading_pipe_color(leader_pipe_index, valves, valve_states)
                 return leader_color
     
-    # If pipe doesn't belong to any group, use proximity-based logic
+    # THIRD: If pipe doesn't belong to any group, use proximity-based logic (this preserves V-105)
     return get_pipe_color_based_on_proximity(pipe_index, valves, valve_states)
 
 def get_pipe_color_based_on_proximity(pipe_index, valves, valve_states):
-    """Determine pipe color based on valve proximity"""
+    """Determine pipe color based on valve proximity - PRESERVES ALL EXISTING FUNCTIONALITY"""
     pipe = st.session_state.pipes[pipe_index]
     
     # Check if any valve is near the pipe start
@@ -437,6 +437,9 @@ with col2:
     - **V-302** → **Pipe 13** → Activates Pipes 14,4,21,22
     - **V-103** → **Pipe 5** → Activates Pipes 6,7,8,9,18
     - **V-104** → **Pipe 22** (direct control)
+    
+    **Proximity Control (Preserved):**
+    - **V-105** and other valves still work based on proximity to pipe starts
     
     **Color Coding:**
     - 🟢 **GREEN** = Active Flow
