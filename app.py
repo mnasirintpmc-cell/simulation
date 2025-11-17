@@ -46,10 +46,10 @@ def get_groups():
         2:  [3, 4, 14, 21, 22],   # V-301
         5:  [6, 7, 8, 9, 18],     # V-103
         11: [10, 19],
+        12: [],                    # V-501 - ONLY pipe 12, no followers
         13: [14, 4, 21, 22],      # V-302
         17: [16, 15, 8],          # V-105
-        22: [3, 4, 14, 21],       # V-104 downstream
-        23: [24, 25, 26, 27]      # V-501 - ADDED V-501 GROUP
+        22: [3, 4, 14, 21]        # V-104 downstream
     }
 
 # ============ HARD-CODED + PROXIMITY CONTROL =============
@@ -57,8 +57,8 @@ def get_leader_of_pipe(pipe_idx_0):
     pipe_num = pipe_idx_0 + 1
     pipe = st.session_state.pipes[pipe_idx_0]
 
-    # 1. Hard-coded valves (these override everything) - ADDED V-501
-    hard = {"V-301":2, "V-302":13, "V-103":5, "V-104":22, "V-501":23}
+    # 1. Hard-coded valves (these override everything) - V-501 controls pipe 12
+    hard = {"V-301":2, "V-302":13, "V-103":5, "V-104":22, "V-501":12}
     for v, leader in hard.items():
         if pipe_num == leader:
             return leader - 1  # return 0-based leader index
@@ -80,8 +80,8 @@ def get_leader_of_pipe(pipe_idx_0):
 def get_active_leaders():
     active_leaders = set()
     
-    # Hard-coded valves - ADDED V-501
-    for valve, leader_1 in {"V-301":2, "V-302":13, "V-103":5, "V-104":22, "V-501":23}.items():
+    # Hard-coded valves - V-501 controls pipe 12
+    for valve, leader_1 in {"V-301":2, "V-302":13, "V-103":5, "V-104":22, "V-501":12}.items():
         if st.session_state.valve_states.get(valve, False):
             active_leaders.add(leader_1 - 1)
 
@@ -259,7 +259,7 @@ with col2:
     st.markdown("---")
     st.subheader("🔗 Valve Control")
     
-    hard_mapped = {"V-301":2, "V-302":13, "V-103":5, "V-104":22, "V-501":23}  # ADDED V-501
+    hard_mapped = {"V-301":2, "V-302":13, "V-103":5, "V-104":22, "V-501":12}  # V-501 controls pipe 12
     groups = get_groups()
     
     for valve_tag, leader_pipe in hard_mapped.items():
@@ -330,4 +330,4 @@ with st.expander("🔧 Debug Information"):
         leader_info = f" | Leader: Pipe {leader_idx + 1}" if leader_idx is not None else " | No Leader"
         st.write(f"Pipe {pipe_number}: {color_name}{leader_info}")
 
-st.success("✅ V-501 ADDED! V-104, V-105, V-301, V-302, V-103, V-501 — ALL now activate their entire downstream groups instantly!")
+st.success("✅ V-501 FIXED! Now activates ONLY pipe 12. All valves working correctly!")
