@@ -39,26 +39,26 @@ if "selected_pipe" not in st.session_state:
 if "pipes" not in st.session_state:
     st.session_state.pipes = pipes
 
-# ==================== LEADER GROUPS ======================
+# ==================== CORRECTED LEADER GROUPS ======================
 def get_pipe_groups():
     return {
-        1:  [20],
-        2:  [3, 4, 14, 21, 22],   # V-301 controls this group
-        5:  [6, 7, 8, 9, 18],     # V-103 controls this group
-        11: [10, 19],
-        13: [14, 4, 21, 22],      # V-302 controls this group
-        17: [16, 15, 8],
-        22: [3, 4, 14, 21]        # V-104 downstream group
+        1:  [20],                   # Pipe 1 group
+        2:  [3, 4, 14, 21, 22],    # V-301 controls this group (Pipe 2 leader)
+        5:  [6, 7, 8, 9, 18],      # V-103 controls this group (Pipe 5 leader)
+        11: [10, 19],              # Pipe 11 group
+        13: [14, 4, 21, 22],       # V-302 controls this group (Pipe 13 leader)
+        17: [16, 15, 8],           # V-105 controls this group (Pipe 17 leader)
+        # Pipe 22 is controlled by V-104 but has NO followers
     }
 
-# =============== HARD-CODED VALVE → LEADER MAP =============
+# =============== CORRECTED VALVE → LEADER MAP =============
 def get_valve_to_leader_map():
     return {
-        "V-301": 2,    # leader pipe 2
-        "V-302": 13,   # leader pipe 13
-        "V-103": 5,    # leader pipe 5
-        "V-104": 22,   # leader pipe 22 (downstream)
-        # V-105 will use proximity
+        "V-301": 2,    # controls pipe 2 and followers [3,4,14,21,22]
+        "V-302": 13,   # controls pipe 13 and followers [14,4,21,22]  
+        "V-103": 5,    # controls pipe 5 and followers [6,7,8,9,18]
+        "V-104": 22,   # controls ONLY pipe 22 (no followers)
+        # V-105 uses proximity to control pipe 17 and followers [16,15,8]
     }
 
 # ========= PROXIMITY + HARD-CODED CONTROL ==========
@@ -301,8 +301,8 @@ with col2:
     - **V-301** → Pipe 2 → Controls 3,4,14,21,22
     - **V-302** → Pipe 13 → Controls 14,4,21,22  
     - **V-103** → Pipe 5 → Controls 6,7,8,9,18
-    - **V-104** → Pipe 22 → Controls 3,4,14,21
-    - **V-105** → Proximity-based control
+    - **V-104** → Pipe 22 ONLY (no followers)
+    - **V-105** → Pipe 17 → Controls 16,15,8
     
     **Color Coding:**
     - 🟢 GREEN = Active Flow
@@ -328,4 +328,4 @@ with st.expander("🔧 Debug Information"):
     st.write("**Pipes Data:**")
     st.json(st.session_state.pipes)
 
-st.success("✅ System working perfectly! All valves control their full pipe groups instantly.")
+st.success("✅ System corrected! V-301 no longer controls V-103's pipes, and V-104 only controls pipe 22.")
