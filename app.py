@@ -45,19 +45,25 @@ def get_pipe_color_based_on_valves(pipe_index, pipe_coords, valves, valve_states
     """Determine pipe color based on upstream valve state AND dependencies"""
     pipe_number = pipe_index + 1  # Convert to 1-indexed for clarity
     
-    # HARDCODED VALVE DEPENDENCIES - SIMPLE AND DIRECT
+    # HARDCODED VALVE DEPENDENCIES
     v301_pipes = [2, 3, 4, 14, 22, 21]
     v302_pipes = [4, 13, 14, 22, 21]
     
-    # Check V-301 first
+    # TEST: Force V-301 to work
     if "V-301" in valve_states:
+        print(f"TEST: V-301 found! State: {valve_states['V-301']}, Checking pipe {pipe_number} in {v301_pipes}")
         if pipe_number in v301_pipes:
+            print(f"TEST: Pipe {pipe_number} IS in V-301 pipes list!")
             if valve_states["V-301"]:
+                print(f"TEST: V-301 is OPEN, Pipe {pipe_number} should be GREEN")
                 return (0, 255, 0)  # Green
             else:
+                print(f"TEST: V-301 is CLOSED, Pipe {pipe_number} should be BLUE")
                 return (0, 0, 255)  # Blue
+        else:
+            print(f"TEST: Pipe {pipe_number} is NOT in V-301 pipes list")
     
-    # Check V-302 second
+    # Check V-302
     if "V-302" in valve_states:
         if pipe_number in v302_pipes:
             if valve_states["V-302"]:
